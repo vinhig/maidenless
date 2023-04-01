@@ -1,14 +1,11 @@
 #include "vk.h"
-
-#include <vulkan/vulkan_core.h>
+#include "vk_private.h"
 
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include <SDL2/SDL_vulkan.h>
-
-void *CL_GetWindow(client_t *client);
 
 const char *vk_instance_layers[] = {
     "VK_LAYER_KHRONOS_validation",
@@ -31,35 +28,45 @@ char vk_error[1024];
     return NULL;                                                               \
   }
 
-struct vk_rend_t {
-  VkInstance instance;
-  VkPhysicalDevice physical_device;
-  VkDevice device;
-  VkQueue queue;
-  VkSurfaceKHR surface;
-  VkSwapchainKHR swapchain;
+VkShaderModule VK_LoadShaderModule(vk_rend_t *rend, const char *path) {
+  FILE *f = fopen(path, "rb");
 
-  VkImage *swapchain_images;
-  VkImageView *swapchain_image_views;
-  unsigned swapchain_image_count;
-  VkSemaphore swapchain_present_semaphore[3];
-  VkSemaphore swapchain_render_semaphore[3];
-  VkFence rend_fence[3];
+  if (!f) {
+    printf("`%s` file doesn't seem to exist.\n", path);
+    return NULL;
+  }
 
-  unsigned queue_family_index;
+  fseek(f, 0, SEEK_END);
+  long size = ftell(f);
+  fseek(f, 0, SEEK_SET);
 
-  // Yes only one, but i come from OpenGL...
-  VkCommandPool command_pool;
-  VkCommandBuffer command_buffer[3];
+  void *shader = malloc(size);
 
-  unsigned current_frame;
+  fread(shader, size, 1, f);
+  fclose(f);
 
-  unsigned width;
-  unsigned height;
-};
+  VkShaderModuleCreateInfo shader_info = {
+      .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+      .codeSize = size,
+      .pCode = shader,
+  };
+
+  VkShaderModule module;
+
+  if (vkCreateShaderModule(rend->device, &shader_info, NULL, &module) !=
+      VK_SUCCESS) {
+    printf("`%s` doesn't seem to be a valid shader.\n", path);
+    free(shader);
+    return NULL;
+  }
+
+  free(shader);
+
+  return module;
+}
 
 vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
-  vk_rend_t *rend = malloc(sizeof(vk_rend_t));
+  vk_rend_t *rend = calloc(1, sizeof(vk_rend_t));
 
   rend->width = width;
   rend->height = height;
@@ -91,7 +98,7 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pApplicationInfo = &app_info,
         .enabledLayerCount =
-            0, // sizeof(vk_instance_layers) / sizeof(vk_instance_layers[0]),
+            sizeof(vk_instance_layers) / sizeof(vk_instance_layers[0]),
         .ppEnabledLayerNames = &vk_instance_layers[0],
         .enabledExtensionCount = instance_extension_count,
         .ppEnabledExtensionNames = (const char *const *)&instance_extensions[0],
@@ -214,7 +221,7 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
 
     unsigned queue_family_index = 0;
     bool queue_family_found = false;
-    for (int i = 0; i < queue_family_count; i++) {
+    for (unsigned i = 0; i < queue_family_count; i++) {
       if (queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT &&
           queue_families[i].queueFlags & VK_QUEUE_COMPUTE_BIT) {
         queue_family_found = true;
@@ -258,6 +265,8 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
                               &rend->device));
 
     vkGetDeviceQueue(rend->device, queue_family_index, 0, &rend->queue);
+
+    free(queue_families);
   }
 
   // Create swapchain and corresponding images
@@ -284,6 +293,8 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
 
     VK_CHECK_R(vkCreateSwapchainKHR(rend->device, &swapchain_info, NULL,
                                     &rend->swapchain));
+
+    rend->swapchain_format = VK_FORMAT_B8G8R8A8_UNORM;
 
     unsigned image_count = 0;
     vkGetSwapchainImagesKHR(rend->device, rend->swapchain, &image_count, NULL);
@@ -364,6 +375,11 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
     }
   }
 
+  // Initialize other parts of the renderer
+  if (!VK_InitGBuffer(rend)) {
+    VK_PUSH_ERROR("Couldn't create a specific pipeline: GBuffer.");
+  }
+
   return rend;
 }
 
@@ -427,7 +443,7 @@ void VK_Draw(vk_rend_t *rend) {
                        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0,
                        NULL, 0, NULL, 1, &image_memory_barrier_1);
 
-  VkClearValue clear_color = {};
+  VkClearValue clear_color;
   clear_color.color.float32[0] = 100.0f / 255.0f;
   clear_color.color.float32[1] = 237.0f / 255.0f;
   clear_color.color.float32[2] = sin((float)rend->current_frame / 120.f);
@@ -456,7 +472,7 @@ void VK_Draw(vk_rend_t *rend) {
 
   vkCmdBeginRendering(cmd, &render_info);
 
-  // Draw calls here
+  VK_DrawGBuffer(rend);
 
   vkCmdEndRendering(cmd);
 
@@ -508,6 +524,8 @@ void VK_Draw(vk_rend_t *rend) {
 void VK_DestroyRend(vk_rend_t *rend) {
   vkDeviceWaitIdle(rend->device);
 
+  VK_DestroyGBuffer(rend);
+
   for (int i = 0; i < 3; i++) {
     vkDestroyFence(rend->device, rend->rend_fence[i], NULL);
 
@@ -524,6 +542,12 @@ void VK_DestroyRend(vk_rend_t *rend) {
   vkDestroySurfaceKHR(rend->instance, rend->surface, NULL);
 
   vkDestroyInstance(rend->instance, NULL);
+
+  free(rend->swapchain_images);
+  free(rend->swapchain_image_views);
+
+  free(rend->gbuffer);
+  free(rend);
 }
 
 const char *VK_GetError() { return (const char *)vk_error; }
