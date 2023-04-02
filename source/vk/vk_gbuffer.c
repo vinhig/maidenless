@@ -138,16 +138,21 @@ bool VK_InitGBuffer(vk_rend_t *rend) {
 
     VkPushConstantRange push_constant_info = {
         .offset = 0,
-        .size = sizeof(mat4),
+        .size = sizeof(unsigned),
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+    };
+
+    VkDescriptorSetLayout layouts[] = {
+        rend->global_ubo_desc_set_layout,
+        rend->global_textures_desc_set_layout,
     };
 
     VkPipelineLayoutCreateInfo pipeline_layout_info = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .pPushConstantRanges = &push_constant_info,
         .pushConstantRangeCount = 1,
-        .pSetLayouts = &rend->global_desc_set_layout,
-        .setLayoutCount = 1,
+        .pSetLayouts = &layouts[0],
+        .setLayoutCount = 2,
         .pNext = NULL,
     };
 
@@ -197,7 +202,7 @@ bool VK_InitGBuffer(vk_rend_t *rend) {
   // Create depth texture
   {
     // hey
-    VkExtent3D extend = {
+    VkExtent3D extent = {
         .depth = 1,
         .width = rend->width,
         .height = rend->height,
@@ -207,7 +212,7 @@ bool VK_InitGBuffer(vk_rend_t *rend) {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType = VK_IMAGE_TYPE_2D,
         .format = VK_FORMAT_D32_SFLOAT,
-        .extent = extend,
+        .extent = extent,
         .mipLevels = 1,
         .arrayLayers = 1,
         .samples = VK_SAMPLE_COUNT_1_BIT,
@@ -261,10 +266,6 @@ void VK_DrawGBuffer(vk_rend_t *rend) {
   glm_mat4_mul(rend->global_ubo.proj, rend->global_ubo.view,
                rend->global_ubo.view_proj);
 
-  vkCmdPushConstants(cmd, rend->gbuffer->pipeline_layout,
-                     VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(mat4),
-                     &rend->global_ubo.view_proj[0]);
-
   void *data;
   vmaMapMemory(rend->allocator, rend->global_allocs[rend->current_frame % 3],
                &data);
@@ -275,10 +276,16 @@ void VK_DrawGBuffer(vk_rend_t *rend) {
 
   vkCmdBindDescriptorSets(
       cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, rend->gbuffer->pipeline_layout, 0,
-      1, &rend->global_desc_set[rend->current_frame % 3], 0, NULL);
+      1, &rend->global_ubo_desc_set[rend->current_frame % 3], 0, NULL);
+
+  vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          rend->gbuffer->pipeline_layout, 1, 1,
+                          &rend->global_textures_desc_set, 0, NULL);
 
   for (unsigned i = 0; i < rend->map.primitive_count; i++) {
     VkDeviceSize offset = 0;
+    vkCmdPushConstants(cmd, rend->gbuffer->pipeline_layout,
+                       VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(unsigned), &i);
     vkCmdBindVertexBuffers(cmd, 0, 1, &rend->map.vertex_buffers[i], &offset);
     vkCmdBindIndexBuffer(cmd, rend->map.index_buffers[i], offset,
                          VK_INDEX_TYPE_UINT32);

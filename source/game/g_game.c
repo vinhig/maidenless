@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "cgltf.h"
+#include "stbi_image.h"
 #include "toml.h"
 
 #include "client/cl_client.h"
@@ -124,6 +125,12 @@ bool G_LoadMap(client_t *client, game_t *game, char *map_path) {
         return false;
       }
 
+      if (!primitive->material->has_pbr_metallic_roughness) {
+        printf("All primitives must have correct textures. `%s` (%s).\n",
+               map_path, complete_map_path);
+        return false;
+      }
+
       bool found_uv = false;
       bool found_pos = false;
       bool found_normal = false;
@@ -162,8 +169,12 @@ bool G_LoadMap(client_t *client, game_t *game, char *map_path) {
   // Here we load, so we don't return.
 
   primitive_t *primitives = malloc(sizeof(primitive_t) * primitive_count);
+  texture_t *textures =
+      malloc(sizeof(texture_t) * primitive_count *
+             3); // Assuming each texture has a albedo+normal+rougness textures
 
   size_t curr_primitive = 0;
+  size_t curr_texture = 0;
   for (cgltf_size m = 0; m < data->meshes_count; m++) {
     cgltf_mesh *mesh = &data->meshes[m];
 
@@ -175,6 +186,26 @@ bool G_LoadMap(client_t *client, game_t *game, char *map_path) {
 
       size_t index_count = 0;
       unsigned *indices = NULL;
+
+      // Extracting base color texture
+      {
+        cgltf_texture_view base_color =
+            primitive->material->pbr_metallic_roughness.base_color_texture;
+
+        const uint8_t *texture_data = cgltf_buffer_view_data(
+            (const cgltf_buffer_view *)base_color.texture->image->buffer_view);
+
+        int w, h, n;
+        unsigned char *data = stbi_load_from_memory(
+            texture_data, base_color.texture->image->buffer_view->size, &w, &h,
+            &n, 4);
+
+        textures[curr_texture].width = w;
+        textures[curr_texture].height = h;
+        textures[curr_texture].c = n;
+        textures[curr_texture].data = data;
+        curr_texture++;
+      }
 
       switch (primitive->indices->component_type) {
       case cgltf_component_type_r_16u: {
@@ -265,26 +296,17 @@ bool G_LoadMap(client_t *client, game_t *game, char *map_path) {
         }
       }
 
-      // for (size_t o = 0; o < vertex_count; o++) {
-      //   printf("vertex_t { { %f, %f, %f, }, { %f, %f, %f, }, { %f, %f, }
-      //   };\n",
-      //          vertices[o].pos[0], vertices[o].pos[1], vertices[o].pos[2],
-      //          vertices[o].norm[0], vertices[o].norm[1], vertices[o].norm[2],
-      //          vertices[o].uv[0], vertices[o].uv[1]);
-      // }
-
-      // for (size_t o = 0; o < index_count; o++) {
-      //   printf("%d\n", indices[o]);
-      // }
-
       primitives[curr_primitive].indices = indices;
       primitives[curr_primitive].vertices = vertices;
       primitives[curr_primitive].vertex_count = vertex_count;
       primitives[curr_primitive].index_count = index_count;
+
+      curr_primitive++;
     }
   }
 
-  VK_PushMap(CL_GetRend(client), primitives, primitive_count);
+  VK_PushMap(CL_GetRend(client), primitives, primitive_count, textures,
+             curr_texture);
 
   cgltf_free(data);
   free(complete_map_path);

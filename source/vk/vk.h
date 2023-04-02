@@ -16,14 +16,21 @@ typedef struct primitive_t {
   size_t vertex_count;
   unsigned *indices;
   size_t index_count;
+
 } primitive_t;
+
+typedef struct texture_t {
+  int width, height, c;
+  unsigned char *data;
+} texture_t;
 
 typedef struct vk_map_t vk_map_t;
 
 vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height);
 
 void VK_PushMap(vk_rend_t *rend, primitive_t *primitives,
-                            size_t primitive_count);
+                size_t primitive_count, texture_t *textures,
+                size_t texture_count);
 
 void VK_Draw(vk_rend_t *rend);
 

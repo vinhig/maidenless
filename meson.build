@@ -61,6 +61,7 @@ exe = executable('maidenless',
   'external/toml.c',
   'external/cgltf.c',
   'external/vk_mem_alloc.cpp',
+  'external/stbi_image.c',
 
   install : true,
   include_directories: [include_directories('source/'), include_directories('external/')],

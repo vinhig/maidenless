@@ -37,10 +37,22 @@ typedef struct vk_map_t {
   VmaAllocation *vertex_staging_allocs;
   VkBuffer *index_staging_buffers;
   VmaAllocation *index_staging_allocs;
+  // Only GPU Visible
+  VkImage *textures;
+  VkImageView *texture_views;
+  VmaAllocation *textures_allocs;
+  // Staging textures
+  VkBuffer *textures_staging;
+  VmaAllocation *textures_staging_allocs;
+
   // How much should be drawn
   unsigned *index_counts;
 
   unsigned primitive_count;
+  unsigned texture_count;
+
+  // Means we have to rebuild the descriptor set!
+  bool texture_dirty;
 } vk_map_t;
 
 typedef struct vk_global_ubo_t {
@@ -54,7 +66,7 @@ struct vk_rend_t {
   VkPhysicalDevice physical_device;
   VkDevice device;
   VkQueue graphics_queue;
-  VkQueue transfer_queue;
+  // VkQueue transfer_queue;
   VkSurfaceKHR surface;
   VkSwapchainKHR swapchain;
 
@@ -74,15 +86,22 @@ struct vk_rend_t {
   // Yes only one, because i come from OpenGL...
   VkCommandPool graphics_command_pool;
   VkCommandBuffer graphics_command_buffer[3];
-  VkCommandPool transfer_command_pool;
+  // VkCommandPool transfer_command_pool;
   VkCommandBuffer transfer_command_buffer;
   VkDescriptorPool descriptor_pool;
+  VkDescriptorPool descriptor_bindless_pool;
 
-  VkDescriptorSetLayout global_desc_set_layout;
-  VkDescriptorSet global_desc_set[3];
+  VkDescriptorSetLayout global_ubo_desc_set_layout;
+  VkDescriptorSet global_ubo_desc_set[3];
+
+  VkDescriptorSetLayout global_textures_desc_set_layout;
+  VkDescriptorSet global_textures_desc_set;
 
   VkBuffer global_buffers[3];
   VmaAllocation global_allocs[3];
+
+  VkSampler nearest_sampler;
+  VkSampler linear_sampler;
 
   vk_gbuffer_t *gbuffer;
 

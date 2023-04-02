@@ -220,32 +220,33 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
         rend->physical_device, &queue_family_count, queue_families);
 
     unsigned queue_family_graphics_index = 0;
-    unsigned queue_family_transfer_index = 0;
+    // unsigned queue_family_transfer_index = 0;
     bool queue_family_graphics_found = false;
-    bool queue_family_transfer_found = false;
+    // bool queue_family_transfer_found = false;
     for (unsigned i = 0; i < queue_family_count; i++) {
       if (queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT &&
           queue_families[i].queueFlags & VK_QUEUE_COMPUTE_BIT) {
         queue_family_graphics_found = true;
         queue_family_graphics_index = i;
-      } else if (queue_families[i].queueFlags & VK_QUEUE_TRANSFER_BIT &&
-                 !(queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
-        queue_family_transfer_found = true;
-        queue_family_transfer_index = i;
       }
+      // else if (queue_families[i].queueFlags & VK_QUEUE_TRANSFER_BIT &&
+      //            !(queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
+      //   queue_family_transfer_found = true;
+      //   queue_family_transfer_index = i;
+      // }
     }
 
     if (!queue_family_graphics_found) {
       VK_PUSH_ERROR("Didn't not find a queue that fits the requirement. "
                     "(graphics & compute).");
     }
-    if (!queue_family_transfer_found) {
-      VK_PUSH_ERROR("Didn't not find a queue that fits the requirement. "
-                    "(transfer).");
-    }
+    // if (!queue_family_transfer_found) {
+    //   VK_PUSH_ERROR("Didn't not find a queue that fits the requirement. "
+    //                 "(transfer).");
+    // }
 
     rend->queue_family_graphics_index = queue_family_graphics_index;
-    rend->queue_family_transfer_index = queue_family_transfer_index;
+    // rend->queue_family_transfer_index = queue_family_transfer_index;
 
     float queue_priority = 1.0f;
     VkDeviceQueueCreateInfo queue_graphics_info = {
@@ -254,27 +255,34 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
         .pQueuePriorities = &queue_priority,
         .queueCount = 1,
     };
-    VkDeviceQueueCreateInfo queue_transfer_info = {
-        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-        .queueFamilyIndex = queue_family_transfer_index,
-        .pQueuePriorities = &queue_priority,
-        .queueCount = 1,
+    // VkDeviceQueueCreateInfo queue_transfer_info = {
+    //     .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+    //     .queueFamilyIndex = queue_family_transfer_index,
+    //     .pQueuePriorities = &queue_priority,
+    //     .queueCount = 1,
+    // };
+
+    // VkDeviceQueueCreateInfo queue_infos[] = {queue_graphics_info,
+    //                                          queue_transfer_info};
+
+    VkPhysicalDeviceVulkan12Features vulkan_12 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+        .descriptorBindingPartiallyBound = VK_TRUE,
+        .descriptorBindingSampledImageUpdateAfterBind = VK_TRUE,
+        .descriptorBindingVariableDescriptorCount = VK_TRUE,
+        .runtimeDescriptorArray = VK_TRUE,
     };
 
-    VkDeviceQueueCreateInfo queue_infos[] = {queue_graphics_info,
-                                             queue_transfer_info};
-
-    VkPhysicalDeviceDynamicRenderingFeaturesKHR dynamic_rendering_feature = {
-        .sType =
-            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR,
+    VkPhysicalDeviceVulkan13Features vulkan_13 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
         .dynamicRendering = VK_TRUE,
-    };
+        .pNext = &vulkan_12};
 
     VkDeviceCreateInfo device_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .pQueueCreateInfos = &queue_infos[0],
-        .queueCreateInfoCount = 2,
-        .pNext = &dynamic_rendering_feature,
+        .pQueueCreateInfos = &queue_graphics_info,
+        .queueCreateInfoCount = 1,
+        .pNext = &vulkan_13,
         .enabledExtensionCount =
             sizeof(vk_device_extensions) / sizeof(vk_device_extensions[0]),
         .ppEnabledExtensionNames = vk_device_extensions,
@@ -285,8 +293,8 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
 
     vkGetDeviceQueue(rend->device, queue_family_graphics_index, 0,
                      &rend->graphics_queue);
-    vkGetDeviceQueue(rend->device, queue_family_transfer_index, 0,
-                     &rend->transfer_queue);
+    // vkGetDeviceQueue(rend->device, queue_family_transfer_index, 0,
+    //                  &rend->transfer_queue);
 
     free(queue_families);
   }
@@ -379,23 +387,44 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
   }
 
   // Same operations, but only one command buffer for the transfer pool
+  // {
+  //   VkCommandPoolCreateInfo pool_info = {
+  //       .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+  //       .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+  //       .queueFamilyIndex = rend->queue_family_transfer_index,
+  //   };
+  //   VK_CHECK_R(vkCreateCommandPool(rend->device, &pool_info, NULL,
+  //                                  &rend->transfer_command_pool));
+  VkCommandBufferAllocateInfo allocate_info = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+      .commandPool = rend->graphics_command_pool,
+      .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+      .commandBufferCount = 1,
+  };
+
+  vkAllocateCommandBuffers(rend->device, &allocate_info,
+                           &rend->transfer_command_buffer);
+  // }
+
+  // Create default samplers
   {
-    VkCommandPoolCreateInfo pool_info = {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-        .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-        .queueFamilyIndex = rend->queue_family_transfer_index,
-    };
-    VK_CHECK_R(vkCreateCommandPool(rend->device, &pool_info, NULL,
-                                   &rend->transfer_command_pool));
-    VkCommandBufferAllocateInfo allocate_info = {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .commandPool = rend->transfer_command_pool,
-        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        .commandBufferCount = 1,
+    VkSamplerCreateInfo nearest_sampler_info = {
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = VK_FILTER_NEAREST,
+        .minFilter = VK_FILTER_NEAREST,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
     };
 
-    vkAllocateCommandBuffers(rend->device, &allocate_info,
-                             &rend->transfer_command_buffer);
+    vkCreateSampler(rend->device, &nearest_sampler_info, NULL,
+                    &rend->nearest_sampler);
+
+    nearest_sampler_info.magFilter = VK_FILTER_LINEAR;
+    nearest_sampler_info.minFilter = VK_FILTER_LINEAR;
+
+    vkCreateSampler(rend->device, &nearest_sampler_info, NULL,
+                    &rend->linear_sampler);
   }
 
   // Create semaphores
@@ -470,7 +499,7 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
     };
 
     vkCreateDescriptorSetLayout(rend->device, &desc_info, NULL,
-                                &rend->global_desc_set_layout);
+                                &rend->global_ubo_desc_set_layout);
 
     VkBufferCreateInfo global_buffer_info = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -486,7 +515,7 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
         .descriptorPool = rend->descriptor_pool,
         .descriptorSetCount = 1,
-        .pSetLayouts = &rend->global_desc_set_layout,
+        .pSetLayouts = &rend->global_ubo_desc_set_layout,
     };
 
     VkDescriptorBufferInfo global_desc_buffer_info = {
@@ -506,13 +535,86 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
                       &rend->global_buffers[i], &rend->global_allocs[i], NULL);
 
       vkAllocateDescriptorSets(rend->device, &global_desc_set_info,
-                               &rend->global_desc_set[i]);
+                               &rend->global_ubo_desc_set[i]);
 
       global_desc_buffer_info.buffer = rend->global_buffers[i];
-      global_desc_write.dstSet = rend->global_desc_set[i];
+      global_desc_write.dstSet = rend->global_ubo_desc_set[i];
 
       vkUpdateDescriptorSets(rend->device, 1, &global_desc_write, 0, NULL);
     }
+  }
+
+  // Create the descriptor set holding all freaking textures
+  {
+    unsigned max_bindless_resources = 16536;
+    // Create bindless descriptor pool
+    VkDescriptorPoolSize pool_sizes_bindless[] = {
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, max_bindless_resources},
+    };
+
+    // Update after bind is needed here, for each binding and in the descriptor
+    // set layout creation.
+    VkDescriptorPoolCreateInfo desc_pool_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT_EXT,
+        .maxSets = max_bindless_resources,
+        .poolSizeCount = 1,
+        .pPoolSizes = &pool_sizes_bindless[0],
+    };
+
+    vkCreateDescriptorPool(rend->device, &desc_pool_info, NULL,
+                           &rend->descriptor_bindless_pool);
+
+    // YO!
+    VkDescriptorBindingFlags bindless_flags =
+        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
+        VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT |
+        VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+
+    VkDescriptorSetLayoutBinding vk_binding = {
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .descriptorCount = max_bindless_resources,
+        .binding = 0,
+        .stageFlags = VK_SHADER_STAGE_ALL,
+        .pImmutableSamplers = NULL,
+    };
+
+    VkDescriptorSetLayoutCreateInfo layout_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = 1,
+        .pBindings = &vk_binding,
+        .flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
+    };
+
+    VkDescriptorSetLayoutBindingFlagsCreateInfo extended_info = {
+        .sType =
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
+        .bindingCount = 1,
+        .pBindingFlags = &bindless_flags,
+    };
+
+    layout_info.pNext = &extended_info;
+
+    vkCreateDescriptorSetLayout(rend->device, &layout_info, NULL,
+                                &rend->global_textures_desc_set_layout);
+    unsigned max_binding = max_bindless_resources - 1;
+    VkDescriptorSetVariableDescriptorCountAllocateInfoEXT count_info = {
+        .sType =
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO,
+        .descriptorSetCount = 1,
+        .pDescriptorCounts = &max_binding,
+    };
+
+    VkDescriptorSetAllocateInfo global_textures_desc_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool = rend->descriptor_bindless_pool,
+        .descriptorSetCount = 1,
+        .pSetLayouts = &rend->global_textures_desc_set_layout,
+        .pNext = &count_info,
+    };
+
+    vkAllocateDescriptorSets(rend->device, &global_textures_desc_info,
+                             &rend->global_textures_desc_set);
   }
 
   // Initialize other parts of the renderer
@@ -692,6 +794,18 @@ void VK_DestroyCurrentMap(vk_rend_t *rend) {
                      rend->map.index_allocs[p]);
   }
 
+  for (unsigned p = 0; p < rend->map.texture_count; p++) {
+    if (rend->map.textures_staging[p] != VK_NULL_HANDLE) {
+      vmaDestroyBuffer(rend->allocator, rend->map.textures_staging[p],
+                       rend->map.textures_staging_allocs[p]);
+    }
+
+    vkDestroyImageView(rend->device, rend->map.texture_views[p], NULL);
+
+    vmaDestroyImage(rend->allocator, rend->map.textures[p],
+                    rend->map.textures_allocs[p]);
+  }
+
   free(rend->map.vertex_staging_buffers);
   free(rend->map.vertex_staging_allocs);
   free(rend->map.index_staging_buffers);
@@ -716,10 +830,16 @@ void VK_DestroyRend(vk_rend_t *rend) {
                      rend->global_allocs[i]);
   }
 
-  vkDestroyDescriptorSetLayout(rend->device, rend->global_desc_set_layout,
+  vkDestroySampler(rend->device, rend->nearest_sampler, NULL);
+  vkDestroySampler(rend->device, rend->linear_sampler, NULL);
+
+  vkDestroyDescriptorSetLayout(rend->device, rend->global_ubo_desc_set_layout,
                                NULL);
+  vkDestroyDescriptorSetLayout(rend->device,
+                               rend->global_textures_desc_set_layout, NULL);
 
   vkDestroyDescriptorPool(rend->device, rend->descriptor_pool, NULL);
+  vkDestroyDescriptorPool(rend->device, rend->descriptor_bindless_pool, NULL);
 
   vmaDestroyAllocator(rend->allocator);
 
@@ -733,7 +853,7 @@ void VK_DestroyRend(vk_rend_t *rend) {
     vkDestroySemaphore(rend->device, rend->swapchain_render_semaphore[i], NULL);
   }
   vkDestroyCommandPool(rend->device, rend->graphics_command_pool, NULL);
-  vkDestroyCommandPool(rend->device, rend->transfer_command_pool, NULL);
+  // vkDestroyCommandPool(rend->device, rend->transfer_command_pool, NULL);
   for (unsigned i = 0; i < rend->swapchain_image_count; i++) {
     vkDestroyImageView(rend->device, rend->swapchain_image_views[i], NULL);
   }
@@ -752,8 +872,37 @@ void VK_DestroyRend(vk_rend_t *rend) {
 
 const char *VK_GetError() { return (const char *)vk_error; }
 
+void VK_CreateTexturesDescriptor(vk_rend_t *rend) {
+  // Should be "UpdateTexturesDescriptor", but how god vulkan is complicated
+  // Add dynamically too
+  VkWriteDescriptorSet *writes =
+      calloc(1, sizeof(VkWriteDescriptorSet) * rend->map.texture_count);
+  VkDescriptorImageInfo *image_infos =
+      calloc(1, sizeof(VkDescriptorImageInfo) * rend->map.texture_count);
+
+  for (unsigned t = 0; t < rend->map.texture_count; t++) {
+    VkImageView texture = rend->map.texture_views[t];
+
+    image_infos[t].sampler = rend->linear_sampler;
+    image_infos[t].imageView = texture;
+    image_infos[t].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    writes[t].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[t].descriptorCount = 1;
+    writes[t].dstArrayElement = t; // should be something else
+    writes[t].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[t].dstSet = rend->global_textures_desc_set;
+    writes[t].dstBinding = 0;
+    writes[t].pImageInfo = &image_infos[t];
+  }
+
+  vkUpdateDescriptorSets(rend->device, rend->map.texture_count, writes, 0,
+                         NULL);
+}
+
 void VK_PushMap(vk_rend_t *rend, primitive_t *primitives,
-                size_t primitive_count) {
+                size_t primitive_count, texture_t *textures,
+                size_t texture_count) {
   vkWaitForFences(rend->device, 1, &rend->transfer_fence, true, UINT64_MAX);
 
   vkResetFences(rend->device, 1, &rend->transfer_fence);
@@ -766,138 +915,294 @@ void VK_PushMap(vk_rend_t *rend, primitive_t *primitives,
 
   vkBeginCommandBuffer(cmd, &begin_info);
 
-  VkBuffer *vertex_staging_buffers = malloc(sizeof(VkBuffer) * primitive_count);
-  VmaAllocation *vertex_staging_allocs =
-      malloc(sizeof(VmaAllocation) * primitive_count);
-  VkBuffer *index_staging_buffers = malloc(sizeof(VkBuffer) * primitive_count);
-  VmaAllocation *index_staging_allocs =
-      malloc(sizeof(VmaAllocation) * primitive_count);
+  // Work with all vertex and index buffers here
+  {
+    VkBuffer *vertex_staging_buffers =
+        malloc(sizeof(VkBuffer) * primitive_count);
+    VmaAllocation *vertex_staging_allocs =
+        malloc(sizeof(VmaAllocation) * primitive_count);
+    VkBuffer *index_staging_buffers =
+        malloc(sizeof(VkBuffer) * primitive_count);
+    VmaAllocation *index_staging_allocs =
+        malloc(sizeof(VmaAllocation) * primitive_count);
 
-  VkBuffer *vertex_buffers = malloc(sizeof(VkBuffer) * primitive_count);
-  VmaAllocation *vertex_allocs =
-      malloc(sizeof(VmaAllocation) * primitive_count);
-  VkBuffer *index_buffers = malloc(sizeof(VkBuffer) * primitive_count);
-  VmaAllocation *index_allocs = malloc(sizeof(VmaAllocation) * primitive_count);
+    VkBuffer *vertex_buffers = malloc(sizeof(VkBuffer) * primitive_count);
+    VmaAllocation *vertex_allocs =
+        malloc(sizeof(VmaAllocation) * primitive_count);
+    VkBuffer *index_buffers = malloc(sizeof(VkBuffer) * primitive_count);
+    VmaAllocation *index_allocs =
+        malloc(sizeof(VmaAllocation) * primitive_count);
 
-  unsigned *index_counts = malloc(sizeof(unsigned) * primitive_count);
+    unsigned *index_counts = malloc(sizeof(unsigned) * primitive_count);
 
-  for (size_t p = 0; p < primitive_count; p++) {
+    for (size_t p = 0; p < primitive_count; p++) {
+      VkBuffer vertex_staging_buffer;
+      VmaAllocation vertex_staging_alloc;
+      VkBuffer index_staging_buffer;
+      VmaAllocation index_staging_alloc;
 
-    VkBuffer vertex_staging_buffer;
-    VmaAllocation vertex_staging_alloc;
-    VkBuffer index_staging_buffer;
-    VmaAllocation index_staging_alloc;
+      VkBuffer vertex_buffer;
+      VmaAllocation vertex_alloc;
+      VkBuffer index_buffer;
+      VmaAllocation index_alloc;
 
-    VkBuffer vertex_buffer;
-    VmaAllocation vertex_alloc;
-    VkBuffer index_buffer;
-    VmaAllocation index_alloc;
+      primitive_t *primitive = &primitives[p];
 
-    primitive_t *primitive = &primitives[p];
+      // Push Vertex buffer
+      {
+        VkBufferCreateInfo buffer_info = {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .size = primitive->vertex_count * sizeof(vertex_t),
+            .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+                     VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        };
 
-    // Push Vertex buffer
-    {
-      VkBufferCreateInfo buffer_info = {
-          .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-          .size = primitive->vertex_count * sizeof(vertex_t),
-          .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
-                   VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VmaAllocationCreateInfo alloc_info = {
+            .usage = VMA_MEMORY_USAGE_CPU_TO_GPU,
+        };
+
+        vmaCreateBuffer(rend->allocator, &buffer_info, &alloc_info,
+                        &vertex_staging_buffer, &vertex_staging_alloc, NULL);
+
+        void *mapped_data;
+        vmaMapMemory(rend->allocator, vertex_staging_alloc, &mapped_data);
+
+        memcpy(mapped_data, primitive->vertices,
+               primitive->vertex_count * sizeof(vertex_t));
+
+        vmaUnmapMemory(rend->allocator, vertex_staging_alloc);
+      }
+
+      // Create vertex GPU buffer and initiate copy
+      {
+        VkBufferCreateInfo buffer_info = {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .size = primitive->vertex_count * sizeof(vertex_t),
+            .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+                     VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        };
+        VmaAllocationCreateInfo alloc_info = {
+            .usage = VMA_MEMORY_USAGE_GPU_ONLY,
+        };
+
+        vmaCreateBuffer(rend->allocator, &buffer_info, &alloc_info,
+                        &vertex_buffer, &vertex_alloc, NULL);
+        VkBufferCopy region = {
+            .dstOffset = 0,
+            .srcOffset = 0,
+            .size = primitive->vertex_count * sizeof(vertex_t),
+        };
+        vkCmdCopyBuffer(cmd, vertex_staging_buffer, vertex_buffer, 1, &region);
+      }
+
+      // Push index buffer
+      {
+        VkBufferCreateInfo buffer_info = {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .size = primitive->index_count * sizeof(unsigned),
+            .usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+                     VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        };
+        VmaAllocationCreateInfo alloc_info = {
+            .usage = VMA_MEMORY_USAGE_CPU_TO_GPU,
+        };
+
+        vmaCreateBuffer(rend->allocator, &buffer_info, &alloc_info,
+                        &index_staging_buffer, &index_staging_alloc, NULL);
+
+        void *mapped_data;
+        vmaMapMemory(rend->allocator, index_staging_alloc, &mapped_data);
+
+        memcpy(mapped_data, primitive->indices,
+               primitive->index_count * sizeof(unsigned));
+
+        vmaUnmapMemory(rend->allocator, index_staging_alloc);
+      }
+
+      // Create index GPU buffer and initiate copy
+      {
+        VkBufferCreateInfo buffer_info = {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .size = primitive->index_count * sizeof(unsigned),
+            .usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+                     VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        };
+        VmaAllocationCreateInfo alloc_info = {
+            .usage = VMA_MEMORY_USAGE_GPU_ONLY,
+        };
+
+        vmaCreateBuffer(rend->allocator, &buffer_info, &alloc_info,
+                        &index_buffer, &index_alloc, NULL);
+        VkBufferCopy region = {
+            .dstOffset = 0,
+            .srcOffset = 0,
+            .size = primitive->index_count * sizeof(unsigned),
+        };
+        vkCmdCopyBuffer(cmd, index_staging_buffer, index_buffer, 1, &region);
+      }
+
+      vertex_staging_buffers[p] = vertex_staging_buffer;
+      vertex_staging_allocs[p] = vertex_staging_alloc;
+      index_staging_buffers[p] = index_staging_buffer;
+      index_staging_allocs[p] = index_staging_alloc;
+
+      vertex_buffers[p] = vertex_buffer;
+      vertex_allocs[p] = vertex_alloc;
+      index_buffers[p] = index_buffer;
+      index_allocs[p] = index_alloc;
+
+      index_counts[p] = primitive->index_count;
+    }
+
+    rend->map.vertex_staging_buffers = vertex_staging_buffers;
+    rend->map.vertex_staging_allocs = vertex_staging_allocs;
+    rend->map.index_staging_buffers = index_staging_buffers;
+    rend->map.index_staging_allocs = index_staging_allocs;
+
+    rend->map.vertex_buffers = vertex_buffers;
+    rend->map.vertex_allocs = vertex_allocs;
+    rend->map.index_buffers = index_buffers;
+    rend->map.index_allocs = index_allocs;
+
+    rend->map.index_counts = index_counts;
+    rend->map.primitive_count = primitive_count;
+  }
+
+  // Work with all textures and the related global descriptor
+  {
+    VkImage *vk_textures = malloc(sizeof(VkImage) * texture_count);
+    VmaAllocation *texture_allocs =
+        malloc(sizeof(VmaAllocation) * texture_count);
+
+    VkImageView *texture_views = malloc(sizeof(VkImageView) * texture_count);
+
+    VkBuffer *stagings = malloc(sizeof(VkBuffer) * texture_count);
+    VmaAllocation *staging_allocs =
+        malloc(sizeof(VmaAllocation) * texture_count);
+
+    for (size_t t = 0; t < texture_count; t++) {
+      texture_t *texture = &textures[t];
+      VkExtent3D extent = {
+          .width = texture->width,
+          .height = texture->height,
+          .depth = 1,
       };
-      VmaAllocationCreateInfo alloc_info = {
+      VkImageCreateInfo tex_info = {
+          .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+          .imageType = VK_IMAGE_TYPE_2D,
+          .format = VK_FORMAT_R8G8B8A8_SRGB,
+          .extent = extent,
+          .mipLevels = 1,
+          .arrayLayers = 1,
+          .samples = VK_SAMPLE_COUNT_1_BIT,
+          .tiling = VK_IMAGE_TILING_OPTIMAL,
+          .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+      };
+      VmaAllocationCreateInfo tex_alloc_info = {.usage =
+                                                    VMA_MEMORY_USAGE_GPU_ONLY};
+
+      vmaCreateImage(rend->allocator, &tex_info, &tex_alloc_info,
+                     &vk_textures[t], &texture_allocs[t], NULL);
+
+      // Change layout of this image
+      VkImageSubresourceRange range;
+      range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+      range.baseMipLevel = 0;
+      range.levelCount = 1;
+      range.baseArrayLayer = 0;
+      range.layerCount = 1;
+
+      VkImageMemoryBarrier image_barrier_1 = {
+          .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+          .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+          .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+          .image = vk_textures[t],
+          .subresourceRange = range,
+          .srcAccessMask = 0,
+          .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+      };
+
+      vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                           VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL,
+                           1, &image_barrier_1);
+
+      // CREATE, MAP
+      VkBufferCreateInfo staging_info = {
+          .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+          .usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+          .size = texture->width * texture->height * 4,
+      };
+
+      VmaAllocationCreateInfo staging_alloc_info = {
           .usage = VMA_MEMORY_USAGE_CPU_TO_GPU,
       };
 
-      vmaCreateBuffer(rend->allocator, &buffer_info, &alloc_info,
-                      &vertex_staging_buffer, &vertex_staging_alloc, NULL);
+      vmaCreateBuffer(rend->allocator, &staging_info, &staging_alloc_info,
+                      &stagings[t], &staging_allocs[t], NULL);
 
-      void *mapped_data;
-      vmaMapMemory(rend->allocator, vertex_staging_alloc, &mapped_data);
+      void *data;
+      vmaMapMemory(rend->allocator, staging_allocs[t], &data);
+      memcpy(data, texture->data, texture->width * texture->height * 4);
+      vmaUnmapMemory(rend->allocator, staging_allocs[t]);
 
-      memcpy(mapped_data, primitive->vertices,
-             primitive->vertex_count * sizeof(vertex_t));
+      // COPY
+      VkBufferImageCopy copy_region = {
+          .bufferOffset = 0,
+          .bufferRowLength = 0,
+          .bufferImageHeight = 0,
+          .imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+          .imageSubresource.mipLevel = 0,
+          .imageSubresource.baseArrayLayer = 0,
+          .imageSubresource.layerCount = 1,
+          .imageExtent = extent,
+      };
 
-      vmaUnmapMemory(rend->allocator, vertex_staging_alloc);
+      vkCmdCopyBufferToImage(cmd, stagings[t], vk_textures[t],
+                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
+                             &copy_region);
+
+      image_barrier_1.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+      image_barrier_1.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      image_barrier_1.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+      image_barrier_1.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+      vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                           VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 0,
+                           NULL, 1, &image_barrier_1);
+
+      // Create image view and sampler
+      // Almost there
+      VkImageViewCreateInfo image_view_info = {
+          .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+          .viewType = VK_IMAGE_VIEW_TYPE_2D,
+          .format = VK_FORMAT_R8G8B8A8_SRGB,
+          .components =
+              {
+                  .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+                  .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+                  .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+                  .a = VK_COMPONENT_SWIZZLE_IDENTITY,
+              },
+          .subresourceRange =
+              {
+                  .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                  .baseMipLevel = 0,
+                  .levelCount = 1,
+                  .baseArrayLayer = 0,
+                  .layerCount = 1,
+              },
+          .image = vk_textures[t],
+      };
+
+      vkCreateImageView(rend->device, &image_view_info, NULL,
+                        &texture_views[t]);
     }
-
-    // Create vertex GPU buffer and initiate copy
-    {
-      VkBufferCreateInfo buffer_info = {
-          .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-          .size = primitive->vertex_count * sizeof(vertex_t),
-          .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
-                   VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-      };
-      VmaAllocationCreateInfo alloc_info = {
-          .usage = VMA_MEMORY_USAGE_GPU_ONLY,
-      };
-
-      vmaCreateBuffer(rend->allocator, &buffer_info, &alloc_info,
-                      &vertex_buffer, &vertex_alloc, NULL);
-      VkBufferCopy region = {
-          .dstOffset = 0,
-          .srcOffset = 0,
-          .size = primitive->vertex_count * sizeof(vertex_t),
-      };
-      vkCmdCopyBuffer(cmd, vertex_staging_buffer, vertex_buffer, 1, &region);
-    }
-
-    // Push index buffer
-    {
-      VkBufferCreateInfo buffer_info = {
-          .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-          .size = primitive->index_count * sizeof(unsigned),
-          .usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
-                   VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-      };
-      VmaAllocationCreateInfo alloc_info = {
-          .usage = VMA_MEMORY_USAGE_CPU_TO_GPU,
-      };
-
-      vmaCreateBuffer(rend->allocator, &buffer_info, &alloc_info,
-                      &index_staging_buffer, &index_staging_alloc, NULL);
-
-      void *mapped_data;
-      vmaMapMemory(rend->allocator, index_staging_alloc, &mapped_data);
-
-      memcpy(mapped_data, primitive->indices,
-             primitive->index_count * sizeof(unsigned));
-
-      vmaUnmapMemory(rend->allocator, index_staging_alloc);
-    }
-
-    // Create index GPU buffer and initiate copy
-    {
-      VkBufferCreateInfo buffer_info = {
-          .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-          .size = primitive->index_count * sizeof(unsigned),
-          .usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
-                   VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-      };
-      VmaAllocationCreateInfo alloc_info = {
-          .usage = VMA_MEMORY_USAGE_GPU_ONLY,
-      };
-
-      vmaCreateBuffer(rend->allocator, &buffer_info, &alloc_info, &index_buffer,
-                      &index_alloc, NULL);
-      VkBufferCopy region = {
-          .dstOffset = 0,
-          .srcOffset = 0,
-          .size = primitive->index_count * sizeof(unsigned),
-      };
-      vkCmdCopyBuffer(cmd, index_staging_buffer, index_buffer, 1, &region);
-    }
-
-    vertex_staging_buffers[p] = vertex_staging_buffer;
-    vertex_staging_allocs[p] = vertex_staging_alloc;
-    index_staging_buffers[p] = index_staging_buffer;
-    index_staging_allocs[p] = index_staging_alloc;
-
-    vertex_buffers[p] = vertex_buffer;
-    vertex_allocs[p] = vertex_alloc;
-    index_buffers[p] = index_buffer;
-    index_allocs[p] = index_alloc;
-
-    index_counts[p] = primitive->index_count;
+    rend->map.textures = vk_textures;
+    rend->map.textures_allocs = texture_allocs;
+    rend->map.textures_staging = stagings;
+    rend->map.textures_staging_allocs = staging_allocs;
+    rend->map.texture_count = texture_count;
+    rend->map.texture_views = texture_views;
   }
 
   vkEndCommandBuffer(cmd);
@@ -908,18 +1213,7 @@ void VK_PushMap(vk_rend_t *rend, primitive_t *primitives,
       .pCommandBuffers = &rend->transfer_command_buffer,
   };
 
-  vkQueueSubmit(rend->transfer_queue, 1, &submit_info, rend->transfer_fence);
+  vkQueueSubmit(rend->graphics_queue, 1, &submit_info, rend->transfer_fence);
 
-  rend->map.vertex_staging_buffers = vertex_staging_buffers;
-  rend->map.vertex_staging_allocs = vertex_staging_allocs;
-  rend->map.index_staging_buffers = index_staging_buffers;
-  rend->map.index_staging_allocs = index_staging_allocs;
-
-  rend->map.vertex_buffers = vertex_buffers;
-  rend->map.vertex_allocs = vertex_allocs;
-  rend->map.index_buffers = index_buffers;
-  rend->map.index_allocs = index_allocs;
-
-  rend->map.index_counts = index_counts;
-  rend->map.primitive_count = primitive_count;
+  VK_CreateTexturesDescriptor(rend);
 }

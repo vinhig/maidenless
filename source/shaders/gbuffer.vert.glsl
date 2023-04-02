@@ -5,8 +5,10 @@ layout(location = 1) in vec3 norm;
 layout(location = 2) in vec2 uv;
 
 layout(location = 0) out vec3 o_color;
+layout(location = 1) out vec2 o_uv;
+layout(location = 2) flat out int o_albedo_id;
 
-layout(push_constant) uniform Constants { mat4 view_proj; }
+layout(push_constant) uniform Constants { int albedo_id; }
 uniforms;
 
 layout(set = 0, binding = 0) uniform GlobalUbo {
@@ -19,4 +21,6 @@ global_ubo;
 void main() {
   gl_Position = global_ubo.view_proj * vec4(pos, 1.0f);
   o_color = vec3(uv, 1.0);
+  o_uv = uv;
+  o_albedo_id = uniforms.albedo_id;
 }
