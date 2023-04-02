@@ -1,6 +1,8 @@
 #include "vk.h"
 #include "vk_private.h"
 
+#include "cglm/cglm.h"
+
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -134,8 +136,16 @@ bool VK_InitGBuffer(vk_rend_t *rend) {
       .pAttachments = &blend_attachment,
   };
 
+  VkPushConstantRange push_constant_info = {
+      .offset = 0,
+      .size = sizeof(mat4),
+      .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+  };
+
   VkPipelineLayoutCreateInfo pipeline_layout_info = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+      .pPushConstantRanges = &push_constant_info,
+      .pushConstantRangeCount = 1,
       .pNext = NULL,
   };
 
@@ -176,6 +186,22 @@ void VK_DrawGBuffer(vk_rend_t *rend) {
   VkCommandBuffer cmd = rend->command_buffer[rend->current_frame % 3];
 
   vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, gbuffer->pipeline);
+
+  mat4 proj, view, view_proj;
+
+  vec3 eye = {20.0 * sinf(glm_rad(rend->current_frame)), 12.0, 20.0 * cosf(glm_rad(rend->current_frame))};
+  vec3 center = {0.0, 0.0, 0.0};
+  vec3 up = {0.0, 1.0, 0.0};
+
+  glm_lookat(eye, center, up, view);
+  glm_perspective(glm_rad(90.0f), (float)rend->width / (float)rend->height, 0.01f, 50.0f,
+                  proj);
+  proj[1][1] *= -1;
+  glm_mat4_mul(proj, view, view_proj);
+
+  vkCmdPushConstants(cmd, rend->gbuffer->pipeline_layout,
+                     VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(mat4),
+                     &view_proj[0]);
 
   for (unsigned i = 0; i < rend->map.primitive_count; i++) {
     VkDeviceSize offset = 0;
