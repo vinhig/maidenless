@@ -1,5 +1,5 @@
 # , 'b_lundef=false', 'b_sanitize=address,undefined'
-project('maidenless', 'c',
+project('maidenless', 'c', 'cpp',
   version : '0.1',
   default_options : ['warning_level=3', 'c_std=c11'])
 
@@ -21,6 +21,12 @@ add_global_arguments(
   '-Wno-unused-parameter',
   '-Werror',
   language: 'c',
+)
+
+# CPP files aren't my code, don't want to mess the warnings
+add_global_arguments(
+  '-w',
+  language: 'cpp',
 )
 
 glsllang = find_program('glslangValidator')
@@ -54,6 +60,7 @@ exe = executable('maidenless',
 
   'external/toml.c',
   'external/cgltf.c',
+  'external/vk_mem_alloc.cpp',
 
   install : true,
   include_directories: [include_directories('source/'), include_directories('external/')],

@@ -131,6 +131,8 @@ client_t *CL_CreateClient(const char *title, client_desc_t *desc) {
 
 client_state_t CL_GetClientState(client_t *client) { return client->state; }
 
+vk_rend_t *CL_GetRend(client_t *client) { return client->rend; }
+
 void CL_UpdateClient(client_t *client) {
   SDL_Event event;
 

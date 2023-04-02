@@ -375,6 +375,14 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
     }
   }
 
+  VmaAllocatorCreateInfo allocator_info = {
+      .physicalDevice = rend->physical_device,
+      .device = rend->device,
+      .instance = rend->instance,
+  };
+
+  vmaCreateAllocator(&allocator_info, &rend->allocator);
+
   // Initialize other parts of the renderer
   if (!VK_InitGBuffer(rend)) {
     VK_PUSH_ERROR("Couldn't create a specific pipeline: GBuffer.");
@@ -521,10 +529,28 @@ void VK_Draw(vk_rend_t *rend) {
   VK_Present(rend, image_index);
 }
 
+void VK_DestroyCurrentMap(vk_rend_t *rend) {
+  for (unsigned p = 0; p < rend->map.primitive_count; p++) {
+    vmaDestroyBuffer(rend->allocator, rend->map.vertex_buffers[p],
+                     rend->map.vertex_allocs[p]);
+    vmaDestroyBuffer(rend->allocator, rend->map.index_buffers[p],
+                     rend->map.index_allocs[p]);
+  }
+
+  free(rend->map.vertex_buffers);
+  free(rend->map.vertex_allocs);
+  free(rend->map.index_buffers);
+  free(rend->map.index_allocs);
+  free(rend->map.index_counts);
+}
+
 void VK_DestroyRend(vk_rend_t *rend) {
   vkDeviceWaitIdle(rend->device);
 
+  VK_DestroyCurrentMap(rend);
   VK_DestroyGBuffer(rend);
+
+  vmaDestroyAllocator(rend->allocator);
 
   for (int i = 0; i < 3; i++) {
     vkDestroyFence(rend->device, rend->rend_fence[i], NULL);
@@ -551,3 +577,82 @@ void VK_DestroyRend(vk_rend_t *rend) {
 }
 
 const char *VK_GetError() { return (const char *)vk_error; }
+
+void VK_PushMap(vk_rend_t *rend, primitive_t *primitives,
+                size_t primitive_count) {
+  VkBuffer *vertex_buffers = malloc(sizeof(VkBuffer) * primitive_count);
+  VmaAllocation *vertex_allocs =
+      malloc(sizeof(VmaAllocation) * primitive_count);
+  VkBuffer *index_buffers = malloc(sizeof(VkBuffer) * primitive_count);
+  VmaAllocation *index_allocs = malloc(sizeof(VmaAllocation) * primitive_count);
+  unsigned *index_counts = malloc(sizeof(unsigned) * primitive_count);
+
+  for (size_t p = 0; p < primitive_count; p++) {
+
+    VkBuffer vertex_buffer;
+    VmaAllocation vertex_alloc;
+    VkBuffer index_buffer;
+    VmaAllocation index_alloc;
+
+    primitive_t *primitive = &primitives[p];
+
+    // Push Vertex buffer
+    {
+      VkBufferCreateInfo buffer_info = {
+          .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+          .size = primitive->vertex_count * sizeof(vertex_t),
+          .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+      };
+      VmaAllocationCreateInfo alloc_info = {
+          .usage = VMA_MEMORY_USAGE_CPU_TO_GPU,
+      };
+
+      vmaCreateBuffer(rend->allocator, &buffer_info, &alloc_info,
+                      &vertex_buffer, &vertex_alloc, NULL);
+
+      void *mapped_data;
+      vmaMapMemory(rend->allocator, vertex_alloc, &mapped_data);
+
+      memcpy(mapped_data, primitive->vertices,
+             primitive->vertex_count * sizeof(vertex_t));
+
+      vmaUnmapMemory(rend->allocator, vertex_alloc);
+    }
+
+    // Push index buffer
+    {
+      VkBufferCreateInfo buffer_info = {
+          .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+          .size = primitive->index_count * sizeof(unsigned),
+          .usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+      };
+      VmaAllocationCreateInfo alloc_info = {
+          .usage = VMA_MEMORY_USAGE_CPU_TO_GPU,
+      };
+
+      vmaCreateBuffer(rend->allocator, &buffer_info, &alloc_info, &index_buffer,
+                      &index_alloc, NULL);
+
+      void *mapped_data;
+      vmaMapMemory(rend->allocator, index_alloc, &mapped_data);
+
+      memcpy(mapped_data, primitive->indices,
+             primitive->index_count * sizeof(unsigned));
+
+      vmaUnmapMemory(rend->allocator, index_alloc);
+    }
+
+    vertex_buffers[p] = vertex_buffer;
+    vertex_allocs[p] = vertex_alloc;
+    index_buffers[p] = index_buffer;
+    index_allocs[p] = index_alloc;
+    index_counts[p] = primitive->index_count;
+  }
+
+  rend->map.vertex_buffers = vertex_buffers;
+  rend->map.vertex_allocs = vertex_allocs;
+  rend->map.index_buffers = index_buffers;
+  rend->map.index_allocs = index_allocs;
+  rend->map.index_counts = index_counts;
+  rend->map.primitive_count = primitive_count;
+}

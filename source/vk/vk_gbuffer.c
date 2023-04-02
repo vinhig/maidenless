@@ -15,6 +15,39 @@ bool VK_InitGBuffer(vk_rend_t *rend) {
 
   rend->gbuffer = calloc(1, sizeof(vk_gbuffer_t));
 
+  VkVertexInputBindingDescription main_binding = {
+      .binding = 0,
+      .stride = sizeof(vertex_t),
+      .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+  };
+
+  VkVertexInputAttributeDescription pos_attribute = {
+      .binding = 0,
+      .location = 0,
+      .format = VK_FORMAT_R32G32B32_SFLOAT,
+      .offset = 0,
+  };
+
+  VkVertexInputAttributeDescription norm_attribute = {
+      .binding = 0,
+      .location = 1,
+      .format = VK_FORMAT_R32G32B32_SFLOAT,
+      .offset = sizeof(float) * 3,
+  };
+
+  VkVertexInputAttributeDescription uv_attribute = {
+      .binding = 0,
+      .location = 2,
+      .format = VK_FORMAT_R32G32_SFLOAT,
+      .offset = sizeof(float) * 3 * 2,
+  };
+
+  VkVertexInputAttributeDescription attributes[3] = {
+      [0] = pos_attribute,
+      [1] = norm_attribute,
+      [2] = uv_attribute,
+  };
+
   VkShaderModule vertex_shader = VK_LoadShaderModule(rend, "gbuffer.vert.spv");
   if (!vertex_shader) {
     printf("Couldn't create vertex shader module from "
@@ -73,9 +106,14 @@ bool VK_InitGBuffer(vk_rend_t *rend) {
 
   VkPipelineColorBlendAttachmentState blend_attachment =
       VK_PipelineColorBlendAttachmentState();
-      
+
   VkPipelineVertexInputStateCreateInfo input_state_info =
       VK_PipelineVertexInputStateCreateInfo();
+
+  input_state_info.pVertexAttributeDescriptions = &attributes[0];
+  input_state_info.vertexAttributeDescriptionCount = 3;
+  input_state_info.pVertexBindingDescriptions = &main_binding;
+  input_state_info.vertexBindingDescriptionCount = 1;
 
   VkPipelineInputAssemblyStateCreateInfo input_assembly_info =
       VK_PipelineInputAssemblyStateCreateInfo(
@@ -138,7 +176,15 @@ void VK_DrawGBuffer(vk_rend_t *rend) {
   VkCommandBuffer cmd = rend->command_buffer[rend->current_frame % 3];
 
   vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, gbuffer->pipeline);
-  vkCmdDraw(cmd, 3, 1, 0, 0);
+
+  for (unsigned i = 0; i < rend->map.primitive_count; i++) {
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &rend->map.vertex_buffers[i], &offset);
+    vkCmdBindIndexBuffer(cmd, rend->map.index_buffers[i], offset,
+                         VK_INDEX_TYPE_UINT32);
+
+    vkCmdDrawIndexed(cmd, rend->map.index_counts[i], 1, 0, 0, 0);
+  }
 }
 
 void VK_DestroyGBuffer(vk_rend_t *rend) {

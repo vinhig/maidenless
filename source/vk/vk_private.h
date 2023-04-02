@@ -1,5 +1,6 @@
 #pragma once
 
+#include "vk_mem_alloc.h"
 #include <stdbool.h>
 #include <vulkan/vulkan_core.h>
 
@@ -18,6 +19,16 @@ typedef struct vk_gbuffer_t {
   VkPipelineLayout pipeline_layout;
   VkPipeline pipeline;
 } vk_gbuffer_t;
+
+typedef struct vk_map_t {
+  VkBuffer *vertex_buffers;
+  VmaAllocation *vertex_allocs;
+  VkBuffer *index_buffers;
+  VmaAllocation *index_allocs;
+  unsigned *index_counts;
+
+  unsigned primitive_count;
+} vk_map_t;
 
 struct vk_rend_t {
   VkInstance instance;
@@ -42,6 +53,11 @@ struct vk_rend_t {
   VkCommandBuffer command_buffer[3];
 
   vk_gbuffer_t *gbuffer;
+
+  VmaAllocator allocator;
+
+  // TODO: shouldn't be there, but this is a speedrun
+  vk_map_t map;
 
   unsigned current_frame;
 

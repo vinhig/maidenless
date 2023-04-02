@@ -8,6 +8,9 @@
 #include "cgltf.h"
 #include "toml.h"
 
+#include "client/cl_client.h"
+#include "vk/vk.h"
+
 typedef struct scene_t {
   toml_table_t *def;
   bool loaded;
@@ -102,17 +105,18 @@ bool G_LoadMap(client_t *client, game_t *game, char *map_path) {
     return false;
   }
 
-  // The purpose here is to convert the hierarchical gtlf into a completely flat
-  // mesh able to be drawn in a single draw call.
-  // But first, a sanity check. We don't want to let the user wait too long
+  // First, a sanity check. We don't want to let the user wait too long
   // before saying the mesh is actually invalid. So the rule is: no loading if
   // the code returns, and no return if the code loads
   // Here we return, so we don't load.
+  size_t primitive_count = 0;
   for (cgltf_size m = 0; m < data->meshes_count; m++) {
     cgltf_mesh *mesh = &data->meshes[m];
 
     for (cgltf_size p = 0; p < mesh->primitives_count; p++) {
       cgltf_primitive *primitive = &mesh->primitives[p];
+
+      primitive_count++;
 
       if (primitive->type != cgltf_primitive_type_triangles) {
         printf("All primitives has to be triangles for the map `%s` (%s).\n",
@@ -156,39 +160,142 @@ bool G_LoadMap(client_t *client, game_t *game, char *map_path) {
   }
 
   // Here we load, so we don't return.
+
+  primitive_t *primitives = malloc(sizeof(primitive_t) * primitive_count);
+
+  size_t curr_primitive = 0;
   for (cgltf_size m = 0; m < data->meshes_count; m++) {
     cgltf_mesh *mesh = &data->meshes[m];
 
     for (cgltf_size p = 0; p < mesh->primitives_count; p++) {
       cgltf_primitive *primitive = &mesh->primitives[p];
 
+      size_t vertex_count = 0;
+      vertex_t *vertices = NULL;
+
+      size_t index_count = 0;
+      unsigned *indices = NULL;
+
+      switch (primitive->indices->component_type) {
+      case cgltf_component_type_r_8u: {
+        printf("cgltf_component_type_r_8u\n");
+        break;
+      }
+      case cgltf_component_type_r_16u: {
+        printf("cgltf_component_type_r_16u\n");
+        index_count = primitive->indices->buffer_view->size / sizeof(uint16_t);
+        uint16_t *data =
+            (uint16_t *)cgltf_buffer_view_data(primitive->indices->buffer_view);
+
+        indices = malloc(sizeof(unsigned) * index_count);
+
+        for (size_t y = 0; y < index_count; y++) {
+          indices[y] = (unsigned)data[y];
+        }
+
+        break;
+      }
+      case cgltf_component_type_r_32u: {
+        printf("cgltf_component_type_r_32u\n");
+        break;
+      }
+      default: {
+        printf("YO WTF???\n");
+      }
+      }
+
       for (cgltf_size a = 0; a < primitive->attributes_count; a++) {
         if (strcmp(primitive->attributes[a].name, "TEXCOORD_0") == 0) {
-          cgltf_size s = primitive->attributes[a].data->buffer_view->size;
           switch (primitive->attributes[a].data->component_type) {
           case cgltf_component_type_r_32f: {
-            float *data = (float*)cgltf_buffer_view_data(
+            float *data = (float *)cgltf_buffer_view_data(
                 primitive->attributes[a].data->buffer_view);
+            size_t n = primitive->attributes[a].data->buffer_view->size /
+                       sizeof(float) / 2;
+            if (vertices == NULL) {
+              vertices = malloc(sizeof(vertex_t) * n);
+              vertex_count = n;
+            }
 
-            for (cgltf_size i = 0; i < s / sizeof(float); i++) {
-              printf("%f\n", data[i]);
+            for (size_t p = 0; p < n; p++) {
+              vertices[p].uv[0] = data[p * 2 + 0];
+              vertices[p].uv[1] = data[p * 2 + 1];
             }
             break;
           }
-          default: {
-            // As explained before, no return when we are loading.
+          default:
+            break;
           }
+        } else if (strcmp(primitive->attributes[a].name, "POSITION") == 0) {
+          switch (primitive->attributes[a].data->component_type) {
+          case cgltf_component_type_r_32f: {
+            float *data = (float *)cgltf_buffer_view_data(
+                primitive->attributes[a].data->buffer_view);
+            size_t n = primitive->attributes[a].data->buffer_view->size /
+                       sizeof(float) / 3;
+            if (vertices == NULL) {
+              vertices = malloc(sizeof(vertex_t) * n);
+              vertex_count = n;
+            }
+
+            for (size_t p = 0; p < n; p++) {
+              vertices[p].pos[0] = data[p * 3 + 0];
+              vertices[p].pos[1] = data[p * 3 + 1];
+              vertices[p].pos[2] = data[p * 3 + 2];
+            }
+            break;
           }
-        }
-        if (strcmp(primitive->attributes[a].name, "POSITION") == 0) {
+          default:
+            break;
+          }
         }
         if (strcmp(primitive->attributes[a].name, "NORMAL") == 0) {
+          switch (primitive->attributes[a].data->component_type) {
+          case cgltf_component_type_r_32f: {
+            float *data = (float *)cgltf_buffer_view_data(
+                primitive->attributes[a].data->buffer_view);
+            size_t n = primitive->attributes[a].data->buffer_view->size /
+                       sizeof(float) / 3;
+            if (vertices == NULL) {
+              vertices = malloc(sizeof(vertex_t) * n);
+              vertex_count = n;
+            }
+
+            for (size_t p = 0; p < n; p++) {
+              vertices[p].norm[0] = data[p * 3 + 0];
+              vertices[p].norm[1] = data[p * 3 + 1];
+              vertices[p].norm[2] = data[p * 3 + 2];
+            }
+            break;
+          }
+          default:
+            break;
+          }
         }
       }
+
+      // for (size_t o = 0; o < vertex_count; o++) {
+      //   printf("vertex_t { { %f, %f, %f, }, { %f, %f, %f, }, { %f, %f, }
+      //   };\n",
+      //          vertices[o].pos[0], vertices[o].pos[1], vertices[o].pos[2],
+      //          vertices[o].norm[0], vertices[o].norm[1], vertices[o].norm[2],
+      //          vertices[o].uv[0], vertices[o].uv[1]);
+      // }
+
+      // for (size_t o = 0; o < index_count; o++) {
+      //   printf("%d\n", indices[o]);
+      // }
+
+      primitives[curr_primitive].indices = indices;
+      primitives[curr_primitive].vertices = vertices;
+      primitives[curr_primitive].vertex_count = vertex_count;
+      primitives[curr_primitive].index_count = index_count;
     }
   }
 
-  free(data);
+  VK_PushMap(CL_GetRend(client), primitives, primitive_count);
+
+  cgltf_free(data);
   free(complete_map_path);
   return true;
 }

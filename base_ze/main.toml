@@ -1,2 +1,3 @@
 [scene]
 map = "playground.glb"
+scale = 1.0

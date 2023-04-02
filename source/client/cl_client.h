@@ -3,6 +3,8 @@
 #include <stdbool.h>
 
 typedef struct game_t game_t;
+typedef struct client_t client_t;
+typedef struct vk_rend_t vk_rend_t;
 
 typedef struct client_desc_t {
   unsigned width, height;
@@ -10,8 +12,6 @@ typedef struct client_desc_t {
   char *game;
   bool fullscreen;
 } client_desc_t;
-
-typedef struct client_t client_t;
 
 typedef enum client_state_t {
   CLIENT_RUNNING,
@@ -24,6 +24,7 @@ bool CL_ParseClientDesc(client_desc_t *desc, int argc, char *argv[]);
 client_t *CL_CreateClient(const char *title, client_desc_t *desc);
 
 client_state_t CL_GetClientState(client_t *client);
+vk_rend_t *CL_GetRend(client_t *client);
 
 void CL_UpdateClient(client_t *client);
 

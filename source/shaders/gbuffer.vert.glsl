@@ -1,10 +1,12 @@
 #version 450
 
-void main() {
-  // const array of positions for the triangle
-  const vec3 positions[3] = vec3[3](vec3(1.f, 1.f, 0.0f), vec3(-1.f, 1.f, 0.0f),
-                                    vec3(0.f, -1.f, 0.0f));
+layout(location = 0) in vec3 pos;
+layout(location = 1) in vec3 norm;
+layout(location = 2) in vec2 uv;
 
-  // output the position of each vertex
-  gl_Position = vec4(positions[gl_VertexIndex], 1.0f);
+layout(location = 0) out vec3 o_color;
+
+void main() {
+  gl_Position = vec4(pos, 1.0f);
+  o_color = vec3(uv, 1.0);
 }
