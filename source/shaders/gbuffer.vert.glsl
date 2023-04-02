@@ -6,10 +6,17 @@ layout(location = 2) in vec2 uv;
 
 layout(location = 0) out vec3 o_color;
 
-layout(push_constant) uniform constants { mat4 view_proj; }
+layout(push_constant) uniform Constants { mat4 view_proj; }
 uniforms;
 
+layout(set = 0, binding = 0) uniform GlobalUbo {
+  mat4 view;
+  mat4 proj;
+  mat4 view_proj;
+}
+global_ubo;
+
 void main() {
-  gl_Position = uniforms.view_proj * vec4(pos, 1.0f);
+  gl_Position = global_ubo.view_proj * vec4(pos, 1.0f);
   o_color = vec3(uv, 1.0);
 }

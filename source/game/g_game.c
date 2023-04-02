@@ -177,12 +177,7 @@ bool G_LoadMap(client_t *client, game_t *game, char *map_path) {
       unsigned *indices = NULL;
 
       switch (primitive->indices->component_type) {
-      case cgltf_component_type_r_8u: {
-        printf("cgltf_component_type_r_8u\n");
-        break;
-      }
       case cgltf_component_type_r_16u: {
-        printf("cgltf_component_type_r_16u\n");
         index_count = primitive->indices->buffer_view->size / sizeof(uint16_t);
         uint16_t *data =
             (uint16_t *)cgltf_buffer_view_data(primitive->indices->buffer_view);
@@ -193,10 +188,6 @@ bool G_LoadMap(client_t *client, game_t *game, char *map_path) {
           indices[y] = (unsigned)data[y];
         }
 
-        break;
-      }
-      case cgltf_component_type_r_32u: {
-        printf("cgltf_component_type_r_32u\n");
         break;
       }
       default: {

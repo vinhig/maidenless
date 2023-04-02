@@ -334,7 +334,8 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
     rend->swapchain_image_views = image_views;
     rend->swapchain_image_count = image_count;
   }
-  // Create as many command buffers as need
+
+  // Create as many command buffers as needed
   // 3, one for each concurrent frame
   {
     VkCommandPoolCreateInfo pool_info = {
@@ -375,6 +376,29 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
     }
   }
 
+  // Create descriptor pool
+  {
+    // Dummy allocating, i dont even know if it's important
+    VkDescriptorPoolSize pool_sizes[] = {
+        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 50},
+        {VK_DESCRIPTOR_TYPE_SAMPLER, 50},
+        {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 50},
+    };
+
+    // We allocate 50 uniforms buffers
+    // We allocate
+
+    VkDescriptorPoolCreateInfo desc_pool_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .maxSets = 200,
+        .poolSizeCount = 3,
+        .pPoolSizes = &pool_sizes[0],
+    };
+
+    vkCreateDescriptorPool(rend->device, &desc_pool_info, NULL,
+                           &rend->descriptor_pool);
+  }
+
   VmaAllocatorCreateInfo allocator_info = {
       .physicalDevice = rend->physical_device,
       .device = rend->device,
@@ -382,6 +406,68 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
   };
 
   vmaCreateAllocator(&allocator_info, &rend->allocator);
+
+  // Create global descriptor set layout and descriptor set
+  // Create global ubo too
+  {
+    VkDescriptorSetLayoutBinding global_ubo_binding = {
+        .binding = 0,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+    };
+
+    VkDescriptorSetLayoutCreateInfo desc_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = 1,
+        .pBindings = &global_ubo_binding,
+    };
+
+    vkCreateDescriptorSetLayout(rend->device, &desc_info, NULL,
+                                &rend->global_desc_set_layout);
+
+    VkBufferCreateInfo global_buffer_info = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = sizeof(vk_global_ubo_t),
+        .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+    };
+
+    VmaAllocationCreateInfo global_alloc_info = {
+        .usage = VMA_MEMORY_USAGE_CPU_TO_GPU,
+    };
+
+    VkDescriptorSetAllocateInfo global_desc_set_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool = rend->descriptor_pool,
+        .descriptorSetCount = 1,
+        .pSetLayouts = &rend->global_desc_set_layout,
+    };
+
+    VkDescriptorBufferInfo global_desc_buffer_info = {
+        .range = sizeof(vk_global_ubo_t),
+    };
+
+    VkWriteDescriptorSet global_desc_write = {
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstBinding = 0,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .pBufferInfo = &global_desc_buffer_info,
+    };
+
+    for (int i = 0; i < 3; i++) {
+      vmaCreateBuffer(rend->allocator, &global_buffer_info, &global_alloc_info,
+                      &rend->global_buffers[i], &rend->global_allocs[i], NULL);
+
+      vkAllocateDescriptorSets(rend->device, &global_desc_set_info,
+                               &rend->global_desc_set[i]);
+
+      global_desc_buffer_info.buffer = rend->global_buffers[i];
+      global_desc_write.dstSet = rend->global_desc_set[i];
+
+      vkUpdateDescriptorSets(rend->device, 1, &global_desc_write, 0, NULL);
+    }
+  }
 
   // Initialize other parts of the renderer
   if (!VK_InitGBuffer(rend)) {
@@ -457,6 +543,9 @@ void VK_Draw(vk_rend_t *rend) {
   clear_color.color.float32[2] = sin((float)rend->current_frame / 120.f);
   clear_color.color.float32[3] = 1.0;
 
+  VkClearValue clear_depth;
+  clear_depth.depthStencil.depth = 1.0;
+
   VkRenderingAttachmentInfoKHR color_attachment_info = {
       .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR,
       .imageView = rend->swapchain_image_views[image_index],
@@ -464,6 +553,15 @@ void VK_Draw(vk_rend_t *rend) {
       .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
       .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
       .clearValue = clear_color,
+  };
+
+  VkRenderingAttachmentInfoKHR depth_attachment_info = {
+      .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR,
+      .imageView = rend->gbuffer->depth_map_view,
+      .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR,
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+      .clearValue = clear_depth,
   };
 
   const VkRenderingInfo render_info = {
@@ -476,6 +574,7 @@ void VK_Draw(vk_rend_t *rend) {
       .layerCount = 1,
       .colorAttachmentCount = 1,
       .pColorAttachments = &color_attachment_info,
+      .pDepthAttachment = &depth_attachment_info,
   };
 
   vkCmdBeginRendering(cmd, &render_info);
@@ -549,6 +648,16 @@ void VK_DestroyRend(vk_rend_t *rend) {
 
   VK_DestroyCurrentMap(rend);
   VK_DestroyGBuffer(rend);
+
+  for (int i = 0; i < 3; i++) {
+    vmaDestroyBuffer(rend->allocator, rend->global_buffers[i],
+                     rend->global_allocs[i]);
+  }
+
+  vkDestroyDescriptorSetLayout(rend->device, rend->global_desc_set_layout,
+                               NULL);
+
+  vkDestroyDescriptorPool(rend->device, rend->descriptor_pool, NULL);
 
   vmaDestroyAllocator(rend->allocator);
 

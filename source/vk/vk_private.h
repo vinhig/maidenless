@@ -1,6 +1,8 @@
 #pragma once
 
+#include "cglm/cglm.h"
 #include "vk_mem_alloc.h"
+
 #include <stdbool.h>
 #include <vulkan/vulkan_core.h>
 
@@ -18,6 +20,10 @@ VkShaderModule VK_LoadShaderModule(vk_rend_t *rend, const char *path);
 typedef struct vk_gbuffer_t {
   VkPipelineLayout pipeline_layout;
   VkPipeline pipeline;
+
+  VkImage depth_map_image;
+  VkImageView depth_map_view;
+  VmaAllocation depth_map_alloc;
 } vk_gbuffer_t;
 
 typedef struct vk_map_t {
@@ -29,6 +35,12 @@ typedef struct vk_map_t {
 
   unsigned primitive_count;
 } vk_map_t;
+
+typedef struct vk_global_ubo_t {
+  mat4 proj;
+  mat4 view;
+  mat4 view_proj;
+} vk_global_ubo_t;
 
 struct vk_rend_t {
   VkInstance instance;
@@ -51,6 +63,13 @@ struct vk_rend_t {
   // Yes only one, because i come from OpenGL...
   VkCommandPool command_pool;
   VkCommandBuffer command_buffer[3];
+  VkDescriptorPool descriptor_pool;
+
+  VkDescriptorSetLayout global_desc_set_layout;
+  VkDescriptorSet global_desc_set[3];
+
+  VkBuffer global_buffers[3];
+  VmaAllocation global_allocs[3];
 
   vk_gbuffer_t *gbuffer;
 
@@ -58,6 +77,8 @@ struct vk_rend_t {
 
   // TODO: shouldn't be there, but this is a speedrun
   vk_map_t map;
+
+  vk_global_ubo_t global_ubo;
 
   unsigned current_frame;
 
