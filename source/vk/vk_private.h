@@ -27,10 +27,17 @@ typedef struct vk_gbuffer_t {
 } vk_gbuffer_t;
 
 typedef struct vk_map_t {
+  // Only GPU Visible
   VkBuffer *vertex_buffers;
   VmaAllocation *vertex_allocs;
   VkBuffer *index_buffers;
   VmaAllocation *index_allocs;
+  // Staging buffers
+  VkBuffer *vertex_staging_buffers;
+  VmaAllocation *vertex_staging_allocs;
+  VkBuffer *index_staging_buffers;
+  VmaAllocation *index_staging_allocs;
+  // How much should be drawn
   unsigned *index_counts;
 
   unsigned primitive_count;
@@ -46,9 +53,13 @@ struct vk_rend_t {
   VkInstance instance;
   VkPhysicalDevice physical_device;
   VkDevice device;
-  VkQueue queue;
+  VkQueue graphics_queue;
+  VkQueue transfer_queue;
   VkSurfaceKHR surface;
   VkSwapchainKHR swapchain;
+
+  unsigned queue_family_graphics_index;
+  unsigned queue_family_transfer_index;
 
   VkFormat swapchain_format;
   VkImage *swapchain_images;
@@ -56,13 +67,15 @@ struct vk_rend_t {
   unsigned swapchain_image_count;
   VkSemaphore swapchain_present_semaphore[3];
   VkSemaphore swapchain_render_semaphore[3];
-  VkFence rend_fence[3];
 
-  unsigned queue_family_index;
+  VkFence rend_fence[3];
+  VkFence transfer_fence;
 
   // Yes only one, because i come from OpenGL...
-  VkCommandPool command_pool;
-  VkCommandBuffer command_buffer[3];
+  VkCommandPool graphics_command_pool;
+  VkCommandBuffer graphics_command_buffer[3];
+  VkCommandPool transfer_command_pool;
+  VkCommandBuffer transfer_command_buffer;
   VkDescriptorPool descriptor_pool;
 
   VkDescriptorSetLayout global_desc_set_layout;

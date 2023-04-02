@@ -245,7 +245,7 @@ bool VK_InitGBuffer(vk_rend_t *rend) {
 
 void VK_DrawGBuffer(vk_rend_t *rend) {
   vk_gbuffer_t *gbuffer = rend->gbuffer;
-  VkCommandBuffer cmd = rend->command_buffer[rend->current_frame % 3];
+  VkCommandBuffer cmd = rend->graphics_command_buffer[rend->current_frame % 3];
 
   vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, gbuffer->pipeline);
 
@@ -258,7 +258,8 @@ void VK_DrawGBuffer(vk_rend_t *rend) {
   glm_perspective(glm_rad(90.0f), (float)rend->width / (float)rend->height,
                   0.01f, 50.0f, rend->global_ubo.proj);
   rend->global_ubo.proj[1][1] *= -1;
-  glm_mat4_mul(rend->global_ubo.proj, rend->global_ubo.view, rend->global_ubo.view_proj);
+  glm_mat4_mul(rend->global_ubo.proj, rend->global_ubo.view,
+               rend->global_ubo.view_proj);
 
   vkCmdPushConstants(cmd, rend->gbuffer->pipeline_layout,
                      VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(mat4),
