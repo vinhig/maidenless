@@ -337,8 +337,19 @@ bool G_LoadMap(client_t *client, game_t *game, char *map_path) {
   VK_PushMap(CL_GetRend(client), primitives, primitive_count, textures,
              curr_texture);
 
+  for(unsigned i = 0; i < primitive_count; i++) {
+    free(primitives[i].indices);
+    free(primitives[i].vertices);
+  }
+  for(unsigned i = 0; i < curr_texture; i++) {
+    free(textures[i].data);
+  }
+  free(primitives);
+  free(textures);
+
   cgltf_free(data);
   free(complete_map_path);
+  free(buff);
   return true;
 }
 
@@ -467,6 +478,10 @@ game_state_t G_TickGame(client_t *client, game_t *game) {
 }
 
 void G_DestroyGame(game_t *game) {
+  G_DestroyCollisionMap(game->current_mesh);
   free(game->base);
   toml_free(game->current_scene->def);
+  free(game->current_scene);
+
+  free(game);
 }

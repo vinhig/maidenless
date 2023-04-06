@@ -59,7 +59,7 @@ int main(int argc, char **argv) {
     }
     CL_DrawClient(client, &game_state);
   }
-
+  G_DestroyGame(game);
   CL_DestroyClient(client);
 
   printf(

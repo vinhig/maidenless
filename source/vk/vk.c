@@ -884,6 +884,12 @@ void VK_DestroyCurrentMap(vk_rend_t *rend) {
   free(rend->map.index_staging_buffers);
   free(rend->map.index_staging_allocs);
 
+  free(rend->map.textures_staging);
+  free(rend->map.textures_staging_allocs);
+  free(rend->map.textures);
+  free(rend->map.textures_allocs);
+  free(rend->map.texture_views);
+
   free(rend->map.vertex_buffers);
   free(rend->map.vertex_allocs);
   free(rend->map.index_buffers);
@@ -971,6 +977,9 @@ void VK_CreateTexturesDescriptor(vk_rend_t *rend) {
 
   vkUpdateDescriptorSets(rend->device, rend->map.texture_count, writes, 0,
                          NULL);
+
+  free(writes);
+  free(image_infos);
 }
 
 void VK_PushMap(vk_rend_t *rend, primitive_t *primitives,
