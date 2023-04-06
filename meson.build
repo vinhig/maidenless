@@ -57,6 +57,7 @@ exe = executable('maidenless',
   'source/vk/vk_gbuffer.c',
 
   'source/game/g_game.c',
+  'source/game/g_collision.c',
 
   'external/toml.c',
   'external/cgltf.c',

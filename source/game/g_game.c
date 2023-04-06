@@ -1,5 +1,7 @@
 #include "g_game.h"
 
+typedef struct collision_mesh_t collision_mesh_t;
+
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,7 +29,14 @@ struct game_t {
   float fps_yaw;
 
   scene_t *current_scene;
+  collision_mesh_t *current_mesh;
 };
+
+collision_mesh_t *G_LoadCollisionMap(primitive_t *primitives,
+                                     unsigned primitive_count);
+void G_DestroyCollisionMap(collision_mesh_t *mesh);
+bool G_CollisionRayQuery(collision_mesh_t *mesh, vec3 orig, vec3 dir,
+                         float distance, bool movement, float *t);
 
 char *G_GetCompletePath(char *base, char *path) {
   char *complete_path = malloc(strlen(base) + strlen(path) + 2);
@@ -70,6 +79,10 @@ game_t *G_CreateGame(char *base) {
 
   game->current_scene->def = main_scene;
   game->current_scene->loaded = false;
+
+  game->fps_pos[0] = 7.5f;
+  game->fps_pos[1] = 10.505f;
+  game->fps_pos[2] = -7.5f;
 
   free(main_toml_path);
   fclose(f);
@@ -219,10 +232,14 @@ bool G_LoadMap(client_t *client, game_t *game, char *map_path) {
         uint16_t *data =
             (uint16_t *)cgltf_buffer_view_data(primitive->indices->buffer_view);
 
-        indices = malloc(sizeof(unsigned) * index_count);
+        indices = calloc(1, sizeof(unsigned) * index_count);
 
         for (size_t y = 0; y < index_count; y++) {
           indices[y] = (unsigned)data[y];
+
+          if (indices[y] > 3000) {
+            printf("mmmmmhh %d\n", indices[y]);
+          }
         }
 
         break;
@@ -311,6 +328,12 @@ bool G_LoadMap(client_t *client, game_t *game, char *map_path) {
     }
   }
 
+  if (game->current_mesh) {
+    G_DestroyCollisionMap(game->current_mesh);
+  }
+
+  game->current_mesh = G_LoadCollisionMap(primitives, primitive_count);
+
   VK_PushMap(CL_GetRend(client), primitives, primitive_count, textures,
              curr_texture);
 
@@ -368,27 +391,60 @@ game_state_t G_TickGame(client_t *client, game_t *game) {
   input_t *input = CL_GetInput(client);
 
   // Update camera rotation
-  game->fps_yaw += input->view.x_axis * 0.2;
-  game->fps_pitch += input->view.y_axis * 0.2;
+  game->fps_yaw += input->view.x_axis * 0.12;
+  if (game->fps_yaw >= 90.0f) {
+    game->fps_yaw = 89.9f;
+  } else if (game->fps_yaw <= -90.0f) {
+    game->fps_yaw = -89.9f;
+  }
+  game->fps_pitch += input->view.y_axis * 0.12;
 
   mat4 rot;
   glm_mat4_identity(rot);
+  // For the movement, we don't need to influence with yaw
   glm_rotate_y(rot, glm_rad(game->fps_pitch), rot);
-  glm_rotate_x(rot, glm_rad(game->fps_yaw), rot);
 
   vec3 center = {0.0, 0.0, 1.0};
   vec3 mvnt = {input->movement.y_axis, 0.0, input->movement.x_axis};
 
-  glm_mat4_mulv3(rot, center, 1.0, center);
   glm_mat4_mulv3(rot, mvnt, 1.0, mvnt);
+  // But for the view dir, we need to influence with pitch
+  glm_rotate_x(rot, glm_rad(game->fps_yaw), rot);
+  glm_mat4_mulv3(rot, center, 1.0, center);
 
   glm_vec3_normalize(mvnt);
   glm_vec3_normalize(center);
-  mvnt[0] *= 0.35;
-  mvnt[1] *= 0.35;
-  mvnt[2] *= 0.35;
 
-  glm_vec3_add(mvnt, game->fps_pos, game->fps_pos);
+  vec3 foot_pos;
+  glm_vec3_sub(game->fps_pos, (vec3){0.0, 0.8, 0.0}, foot_pos);
+
+  vec3 gravity = {0.0, -1.0, 0.0};
+
+  float t;
+  bool collided = G_CollisionRayQuery(game->current_mesh, foot_pos, gravity,
+                                      0.8, false, &t);
+  if (!collided) {
+    gravity[1] *= 0.12;
+    glm_vec3_add(gravity, game->fps_pos, game->fps_pos);
+  } else {
+    // printf("foot_pos = {%f, %f, %f}\n", foot_pos[0], foot_pos[1],
+    // foot_pos[2]); printf("game->fps_pos = {%f, %f, %f}\n", game->fps_pos[0],
+    // game->fps_pos[1],
+    //        game->fps_pos[2]);
+    // printf("mvnt = {%f, %f, %f}\n", mvnt[0], mvnt[1], mvnt[2]);
+    gravity[1] = (0.7 - t);
+    glm_vec3_add(gravity, game->fps_pos, game->fps_pos);
+  }
+
+  if (!G_CollisionRayQuery(game->current_mesh, foot_pos, mvnt, 0.35, true,
+                           NULL)) {
+
+    mvnt[0] *= 0.24;
+    mvnt[1] = 0.0;
+    mvnt[2] *= 0.24;
+
+    glm_vec3_add(mvnt, game->fps_pos, game->fps_pos);
+  }
 
   // Construct game state
   unsigned v_width, v_height;
@@ -401,7 +457,7 @@ game_state_t G_TickGame(client_t *client, game_t *game) {
   game_state_t game_state;
 
   glm_look(eye, center, up, game_state.fps.view);
-  glm_perspective(glm_rad(60.0f), (float)v_width / (float)v_height, 0.01f,
+  glm_perspective(glm_rad(60.0f), (float)v_width / (float)v_height, 0.001f,
                   150.0f, game_state.fps.proj);
   game_state.fps.proj[1][1] *= -1;
   glm_mat4_mul(game_state.fps.proj, game_state.fps.view,

@@ -118,7 +118,7 @@ client_t *CL_CreateClient(const char *title, client_desc_t *desc) {
     return NULL;
   }
 
-  client_t *client = malloc(sizeof(client_t));
+  client_t *client = calloc(1, sizeof(client_t));
 
   client->state = CLIENT_CREATING;
   client->window = window;
@@ -174,6 +174,10 @@ void CL_UpdateClient(client_t *client) {
         client->input.movement.y_axis = 1.0f;
       } else if (event.key.keysym.sym == SDLK_d) {
         client->input.movement.y_axis = -1.0f;
+      }
+
+      if (event.key.keysym.sym == SDLK_o) {
+        SDL_SetRelativeMouseMode(true);
       }
 
       if (event.key.keysym.sym == SDLK_ESCAPE) {

@@ -275,6 +275,18 @@ glm_vec3_add(vec3 a, vec3 b, vec3 dest) {
 }
 
 /*!
+ * @brief check if all components of a vector are zero
+ *
+ * @param[in]  a    vector1
+ * @param[out] int  all components are zero
+ */
+CGLM_INLINE
+int
+glm_vec3_all_zero(vec3 a) {
+  return a[0] == 0.0 && a[1] == 0.0 && a[2] == 0.0;
+}
+
+/*!
  * @brief add scalar to v vector store result in dest (d = v + s)
  *
  * @param[in]  v    vector
