@@ -1,6 +1,6 @@
 #pragma once
 
-#include "cglm/cglm.h"
+#include "cglm/types.h"
 #include "vk_mem_alloc.h"
 
 #include <stdbool.h>
@@ -11,7 +11,7 @@ typedef struct client_t client_t;
 void *CL_GetWindow(client_t *client);
 // GBuffer stuff
 bool VK_InitGBuffer(vk_rend_t *rend);
-void VK_DrawGBuffer(vk_rend_t *rend);
+void VK_DrawGBuffer(vk_rend_t *rend, game_state_t* game);
 void VK_DestroyGBuffer(vk_rend_t *rend);
 
 // VK utils
@@ -56,8 +56,8 @@ typedef struct vk_map_t {
 } vk_map_t;
 
 typedef struct vk_global_ubo_t {
-  mat4 proj;
   mat4 view;
+  mat4 proj;
   mat4 view_proj;
 } vk_global_ubo_t;
 

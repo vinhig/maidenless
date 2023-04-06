@@ -1,17 +1,26 @@
 #include "cl_client.h"
+#include "cl_input.h"
 #include "vk/vk.h"
 
 #include <SDL2/SDL.h>
 #include <stdbool.h>
 
+#include "game/g_game.h"
+
 struct client_t {
   SDL_Window *window;
   client_state_t state;
 
+  unsigned v_width, v_height;
+
   vk_rend_t *rend;
+
+  input_t input;
 };
 
 void *CL_GetWindow(client_t *client) { return client->window; }
+
+input_t *CL_GetInput(client_t *client) { return &client->input; }
 
 bool CL_ParseClientDesc(client_desc_t *desc, int argc, char *argv[]) {
   // Arbitrary decision: in debug mode, a badly formed argument is fatal
@@ -125,6 +134,10 @@ client_t *CL_CreateClient(const char *title, client_desc_t *desc) {
   }
 
   client->state = CLIENT_RUNNING;
+  client->v_width = desc->width;
+  client->v_height = desc->height;
+
+  SDL_SetRelativeMouseMode(true);
 
   return client;
 }
@@ -133,19 +146,69 @@ client_state_t CL_GetClientState(client_t *client) { return client->state; }
 
 vk_rend_t *CL_GetRend(client_t *client) { return client->rend; }
 
+void CL_GetViewDim(client_t *client, unsigned *width, unsigned *height) {
+  *width = client->v_width;
+  *height = client->v_height;
+}
+
 void CL_UpdateClient(client_t *client) {
   SDL_Event event;
+
+  client->input.view.x_axis = 0.0;
+  client->input.view.y_axis = 0.0;
 
   while (SDL_PollEvent(&event)) {
     if (event.type == SDL_QUIT) {
       client->state = CLIENT_QUITTING;
       return;
     }
-    switch (event.type) {}
+    switch (event.type) {
+    case SDL_KEYDOWN: {
+      if (event.key.keysym.sym == SDLK_z) {
+        client->input.movement.x_axis = 1.0f;
+      } else if (event.key.keysym.sym == SDLK_s) {
+        client->input.movement.x_axis = -1.0f;
+      }
+
+      if (event.key.keysym.sym == SDLK_q) {
+        client->input.movement.y_axis = 1.0f;
+      } else if (event.key.keysym.sym == SDLK_d) {
+        client->input.movement.y_axis = -1.0f;
+      }
+
+      if (event.key.keysym.sym == SDLK_ESCAPE) {
+        SDL_SetRelativeMouseMode(false);
+      }
+      break;
+    }
+    case SDL_KEYUP: {
+      if (event.key.keysym.sym == SDLK_z) {
+        client->input.movement.x_axis = 0.0f;
+      } else if (event.key.keysym.sym == SDLK_s) {
+        client->input.movement.x_axis = 0.0f;
+      }
+
+      if (event.key.keysym.sym == SDLK_q) {
+        client->input.movement.y_axis = 0.0f;
+      } else if (event.key.keysym.sym == SDLK_d) {
+        client->input.movement.y_axis = 0.0f;
+      }
+      break;
+    }
+    case SDL_MOUSEMOTION: {
+      client->input.view.x_axis = event.motion.yrel;
+      client->input.view.y_axis = -event.motion.xrel;
+      break;
+    }
+    default: {
+    }
+    }
   }
 }
 
-void CL_DrawClient(client_t *client, game_t *game) { VK_Draw(client->rend); }
+void CL_DrawClient(client_t *client, game_state_t *game) {
+  VK_Draw(client->rend, game);
+}
 
 void CL_PushLoadingScreen(client_t *client) {}
 

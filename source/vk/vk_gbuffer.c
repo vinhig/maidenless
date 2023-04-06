@@ -1,6 +1,8 @@
 #include "vk.h"
 #include "vk_private.h"
 
+#include "game/g_game.h"
+
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -248,31 +250,11 @@ bool VK_InitGBuffer(vk_rend_t *rend) {
   return true;
 }
 
-void VK_DrawGBuffer(vk_rend_t *rend) {
+void VK_DrawGBuffer(vk_rend_t *rend, game_state_t* game) {
   vk_gbuffer_t *gbuffer = rend->gbuffer;
   VkCommandBuffer cmd = rend->graphics_command_buffer[rend->current_frame % 3];
 
   vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, gbuffer->pipeline);
-
-  vec3 eye = {20.0 * sinf(glm_rad(rend->current_frame)), 12.0,
-              20.0 * cosf(glm_rad(rend->current_frame))};
-  vec3 center = {0.0, 0.0, 0.0};
-  vec3 up = {0.0, 1.0, 0.0};
-
-  glm_lookat(eye, center, up, rend->global_ubo.view);
-  glm_perspective(glm_rad(90.0f), (float)rend->width / (float)rend->height,
-                  0.01f, 50.0f, rend->global_ubo.proj);
-  rend->global_ubo.proj[1][1] *= -1;
-  glm_mat4_mul(rend->global_ubo.proj, rend->global_ubo.view,
-               rend->global_ubo.view_proj);
-
-  void *data;
-  vmaMapMemory(rend->allocator, rend->global_allocs[rend->current_frame % 3],
-               &data);
-
-  memcpy(data, &rend->global_ubo, sizeof(vk_global_ubo_t));
-
-  vmaUnmapMemory(rend->allocator, rend->global_allocs[rend->current_frame % 3]);
 
   vkCmdBindDescriptorSets(
       cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, rend->gbuffer->pipeline_layout, 0,

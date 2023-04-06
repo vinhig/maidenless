@@ -2,6 +2,7 @@
 
 #include <stddef.h>
 
+typedef struct game_state_t game_state_t;
 typedef struct client_t client_t;
 typedef struct vk_rend_t vk_rend_t;
 
@@ -32,7 +33,7 @@ void VK_PushMap(vk_rend_t *rend, primitive_t *primitives,
                 size_t primitive_count, texture_t *textures,
                 size_t texture_count);
 
-void VK_Draw(vk_rend_t *rend);
+void VK_Draw(vk_rend_t *ren, game_state_t *game);
 
 void VK_DestroyRend(vk_rend_t *rend);
 

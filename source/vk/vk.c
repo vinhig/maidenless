@@ -1,18 +1,30 @@
 #include "vk.h"
 #include "vk_private.h"
 
+#include "cglm/cglm.h"
+
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "game/g_game.h"
 #include <SDL2/SDL_vulkan.h>
 
 const char *vk_instance_layers[] = {
     "VK_LAYER_KHRONOS_validation",
 };
+const unsigned vk_instance_layer_count = 1;
 
-const char *vk_device_extensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-                                      "VK_KHR_dynamic_rendering"};
+const char *vk_device_extensions[] = {
+    VK_KHR_SWAPCHAIN_EXTENSION_NAME, "VK_KHR_dynamic_rendering",
+    "VK_EXT_shader_object", // No supported at the moment, saddy sad
+};
+const unsigned vk_device_extension_count = 2;
+
+const char *vk_device_layers[] = {
+    "VK_EXT_shader_object",
+};
+const unsigned vk_device_layer_count = 1;
 
 char vk_error[1024];
 
@@ -27,6 +39,29 @@ char vk_error[1024];
     memcpy(vk_error, #r, strlen(#r));                                          \
     return NULL;                                                               \
   }
+
+bool VK_CheckDeviceFeatures(VkExtensionProperties *extensions,
+                            unsigned extension_count) {
+  unsigned req = vk_device_extension_count;
+
+  for (unsigned j = 0; j < req; j++) {
+    bool found = false;
+    for (unsigned i = 0; i < extension_count; ++i) {
+      if (strcmp(extensions[i].extensionName, vk_device_extensions[j]) == 0) {
+        found = true;
+        break;
+      }
+    }
+
+    if (!found) {
+      printf("Device extension `%s` isn't supported by this physical device.\n",
+             vk_device_extensions[j]);
+      return false;
+    }
+  }
+
+  return true;
+}
 
 VkShaderModule VK_LoadShaderModule(vk_rend_t *rend, const char *path) {
   FILE *f = fopen(path, "rb");
@@ -97,8 +132,7 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
     VkInstanceCreateInfo instance_info = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pApplicationInfo = &app_info,
-        .enabledLayerCount =
-            sizeof(vk_instance_layers) / sizeof(vk_instance_layers[0]),
+        .enabledLayerCount = vk_instance_layer_count,
         .ppEnabledLayerNames = &vk_instance_layers[0],
         .enabledExtensionCount = instance_extension_count,
         .ppEnabledExtensionNames = (const char *const *)&instance_extensions[0],
@@ -150,6 +184,13 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
       vkEnumerateDeviceExtensionProperties(physical_devices[i], NULL,
                                            &extension_count, extensions);
 
+      unsigned layer_count;
+      vkEnumerateDeviceLayerProperties(physical_devices[i], &layer_count, NULL);
+      VkLayerProperties *layers =
+          malloc(sizeof(VkLayerProperties) * layer_count);
+      vkEnumerateDeviceLayerProperties(physical_devices[i], &layer_count,
+                                       layers);
+
       VkSurfaceCapabilitiesKHR surface_cap;
       vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_devices[i],
                                                 rend->surface, &surface_cap);
@@ -162,11 +203,20 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
       vkGetPhysicalDeviceSurfaceFormatsKHR(physical_devices[i], rend->surface,
                                            &format_count, formats);
 
+      bool all_extensions_ok =
+          VK_CheckDeviceFeatures(extensions, extension_count);
+      if (!all_extensions_ok) {
+        printf("`%s` doesn't support all needed extensions.\n",
+               property.deviceName);
+        continue;
+      }
+
       if (format_count == 0) {
         // Exit, no suitable format for this combinaison of physical device and
         // surface
         free(extensions);
         free(formats);
+        free(layers);
         printf("skipping because no format\n");
         continue;
       } else {
@@ -182,6 +232,9 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
         }
 
         if (!found) {
+          free(extensions);
+          free(formats);
+          free(layers);
           printf("skipping because no desired format\n");
           continue;
         }
@@ -194,12 +247,14 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
         found_suitable = true;
         free(extensions);
         free(formats);
+        free(layers);
         break;
       }
 
       printf("skipping because no VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU\n");
       free(extensions);
       free(formats);
+      free(layers);
     }
 
     if (!found_suitable) {
@@ -278,13 +333,20 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
         .dynamicRendering = VK_TRUE,
         .pNext = &vulkan_12};
 
+    //    VkPhysicalDeviceShaderObjectFeaturesEXT vulkan_shader_object = {
+    //        .sType =
+    //        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_OBJECT_FEATURES_EXT,
+    //        .shaderObject = VK_TRUE,
+    //    };
+    //
+    //    vulkan_12.pNext = &vulkan_shader_object;
+
     VkDeviceCreateInfo device_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .pQueueCreateInfos = &queue_graphics_info,
         .queueCreateInfoCount = 1,
         .pNext = &vulkan_13,
-        .enabledExtensionCount =
-            sizeof(vk_device_extensions) / sizeof(vk_device_extensions[0]),
+        .enabledExtensionCount = vk_device_extension_count,
         .ppEnabledExtensionNames = vk_device_extensions,
     };
 
@@ -640,7 +702,7 @@ void VK_Present(vk_rend_t *rend, unsigned image_index) {
   rend->current_frame++;
 }
 
-void VK_Draw(vk_rend_t *rend) {
+void VK_Draw(vk_rend_t *rend, game_state_t *game) {
   vkWaitForFences(rend->device, 1, &rend->rend_fence[rend->current_frame % 3],
                   true, 1000000000);
   vkResetFences(rend->device, 1, &rend->rend_fence[rend->current_frame % 3]);
@@ -656,6 +718,17 @@ void VK_Draw(vk_rend_t *rend) {
       &image_index);
 
   vkResetCommandBuffer(cmd, 0);
+
+  // Copy game state first person data
+  memcpy(&rend->global_ubo, &game->fps, sizeof(game->fps));
+
+  void *data;
+  vmaMapMemory(rend->allocator, rend->global_allocs[rend->current_frame % 3],
+               &data);
+
+  memcpy(data, &rend->global_ubo, sizeof(vk_global_ubo_t));
+
+  vmaUnmapMemory(rend->allocator, rend->global_allocs[rend->current_frame % 3]);
 
   VkCommandBufferBeginInfo begin_info = {
       .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -727,7 +800,7 @@ void VK_Draw(vk_rend_t *rend) {
 
   vkCmdBeginRendering(cmd, &render_info);
 
-  VK_DrawGBuffer(rend);
+  VK_DrawGBuffer(rend, game);
 
   vkCmdEndRendering(cmd);
 

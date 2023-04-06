@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -47,10 +48,16 @@ int main(int argc, char **argv) {
   }
   CL_PopLoadingScreen(client);
 
-  while (CL_GetClientState(client) == CLIENT_RUNNING) {
+  // Game state is here, so the game be paused while still drawing
+  game_state_t game_state;
+
+  while ((CL_GetClientState(client) != CLIENT_DESTROYING) &&
+         CL_GetClientState(client) != CLIENT_QUITTING) {
     CL_UpdateClient(client);
-    G_TickGame(client, game);
-    CL_DrawClient(client, game);
+    if (CL_GetClientState(client) != CLIENT_PAUSED) {
+      game_state = G_TickGame(client, game);
+    }
+    CL_DrawClient(client, &game_state);
   }
 
   CL_DestroyClient(client);

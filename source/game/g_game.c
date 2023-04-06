@@ -5,11 +5,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "cglm/cglm.h"
 #include "cgltf.h"
 #include "stbi_image.h"
 #include "toml.h"
 
 #include "client/cl_client.h"
+#include "client/cl_input.h"
 #include "vk/vk.h"
 
 typedef struct scene_t {
@@ -19,6 +21,10 @@ typedef struct scene_t {
 
 struct game_t {
   char *base;
+
+  vec3 fps_pos;
+  float fps_pitch;
+  float fps_yaw;
 
   scene_t *current_scene;
 };
@@ -357,7 +363,52 @@ bool G_LoadCurrentScene(client_t *client, game_t *game) {
   return true;
 }
 
-void G_TickGame(client_t *client, game_t *game) {}
+game_state_t G_TickGame(client_t *client, game_t *game) {
+  // Process input
+  input_t *input = CL_GetInput(client);
+
+  // Update camera rotation
+  game->fps_yaw += input->view.x_axis * 0.2;
+  game->fps_pitch += input->view.y_axis * 0.2;
+
+  mat4 rot;
+  glm_mat4_identity(rot);
+  glm_rotate_y(rot, glm_rad(game->fps_pitch), rot);
+  glm_rotate_x(rot, glm_rad(game->fps_yaw), rot);
+
+  vec3 center = {0.0, 0.0, 1.0};
+  vec3 mvnt = {input->movement.y_axis, 0.0, input->movement.x_axis};
+
+  glm_mat4_mulv3(rot, center, 1.0, center);
+  glm_mat4_mulv3(rot, mvnt, 1.0, mvnt);
+
+  glm_vec3_normalize(mvnt);
+  glm_vec3_normalize(center);
+  mvnt[0] *= 0.35;
+  mvnt[1] *= 0.35;
+  mvnt[2] *= 0.35;
+
+  glm_vec3_add(mvnt, game->fps_pos, game->fps_pos);
+
+  // Construct game state
+  unsigned v_width, v_height;
+  CL_GetViewDim(client, &v_width, &v_height);
+
+  vec3 eye = {game->fps_pos[0], game->fps_pos[1], game->fps_pos[2]};
+  // glm_vec3_add(eye, center, center);
+  vec3 up = {0.0, 1.0, 0.0};
+
+  game_state_t game_state;
+
+  glm_look(eye, center, up, game_state.fps.view);
+  glm_perspective(glm_rad(60.0f), (float)v_width / (float)v_height, 0.01f,
+                  150.0f, game_state.fps.proj);
+  game_state.fps.proj[1][1] *= -1;
+  glm_mat4_mul(game_state.fps.proj, game_state.fps.view,
+               game_state.fps.view_proj);
+
+  return game_state;
+}
 
 void G_DestroyGame(game_t *game) {
   free(game->base);
