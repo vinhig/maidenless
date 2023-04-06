@@ -25,13 +25,17 @@ typedef struct texture_t {
   unsigned char *data;
 } texture_t;
 
-typedef struct vk_map_t vk_map_t;
+typedef struct vk_model_t vk_model_t;
 
 vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height);
 
 void VK_PushMap(vk_rend_t *rend, primitive_t *primitives,
                 size_t primitive_count, texture_t *textures,
                 size_t texture_count);
+
+unsigned VK_PushModel(vk_rend_t *rend, primitive_t *primitives,
+                      size_t primitive_count, texture_t *textures,
+                      size_t texture_count);
 
 void VK_Draw(vk_rend_t *ren, game_state_t *game);
 

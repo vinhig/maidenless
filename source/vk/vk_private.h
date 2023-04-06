@@ -11,7 +11,7 @@ typedef struct client_t client_t;
 void *CL_GetWindow(client_t *client);
 // GBuffer stuff
 bool VK_InitGBuffer(vk_rend_t *rend);
-void VK_DrawGBuffer(vk_rend_t *rend, game_state_t* game);
+void VK_DrawGBuffer(vk_rend_t *rend, game_state_t *game);
 void VK_DestroyGBuffer(vk_rend_t *rend);
 
 // VK utils
@@ -26,7 +26,7 @@ typedef struct vk_gbuffer_t {
   VmaAllocation depth_map_alloc;
 } vk_gbuffer_t;
 
-typedef struct vk_map_t {
+typedef struct vk_model_t {
   // Only GPU Visible
   VkBuffer *vertex_buffers;
   VmaAllocation *vertex_allocs;
@@ -50,10 +50,7 @@ typedef struct vk_map_t {
 
   unsigned primitive_count;
   unsigned texture_count;
-
-  // Means we have to rebuild the descriptor set!
-  bool texture_dirty;
-} vk_map_t;
+} vk_model_t;
 
 typedef struct vk_global_ubo_t {
   mat4 view;
@@ -108,7 +105,9 @@ struct vk_rend_t {
   VmaAllocator allocator;
 
   // TODO: shouldn't be there, but this is a speedrun
-  vk_map_t map;
+  vk_model_t map;
+  vk_model_t models[256];
+  unsigned model_count;
 
   vk_global_ubo_t global_ubo;
 

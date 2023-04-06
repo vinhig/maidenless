@@ -982,9 +982,11 @@ void VK_CreateTexturesDescriptor(vk_rend_t *rend) {
   free(image_infos);
 }
 
-void VK_PushMap(vk_rend_t *rend, primitive_t *primitives,
-                size_t primitive_count, texture_t *textures,
-                size_t texture_count) {
+void VK_RemoveMeshFromGpu(vk_rend_t *rend, vk_model_t *model) {}
+
+void VK_UploadMeshToGpu(vk_rend_t *rend, vk_model_t *model,
+                        primitive_t *primitives, size_t primitive_count,
+                        texture_t *textures, size_t texture_count) {
   vkWaitForFences(rend->device, 1, &rend->transfer_fence, true, UINT64_MAX);
 
   vkResetFences(rend->device, 1, &rend->transfer_fence);
@@ -1136,18 +1138,16 @@ void VK_PushMap(vk_rend_t *rend, primitive_t *primitives,
       index_counts[p] = primitive->index_count;
     }
 
-    rend->map.vertex_staging_buffers = vertex_staging_buffers;
-    rend->map.vertex_staging_allocs = vertex_staging_allocs;
-    rend->map.index_staging_buffers = index_staging_buffers;
-    rend->map.index_staging_allocs = index_staging_allocs;
-
-    rend->map.vertex_buffers = vertex_buffers;
-    rend->map.vertex_allocs = vertex_allocs;
-    rend->map.index_buffers = index_buffers;
-    rend->map.index_allocs = index_allocs;
-
-    rend->map.index_counts = index_counts;
-    rend->map.primitive_count = primitive_count;
+    model->vertex_staging_buffers = vertex_staging_buffers;
+    model->vertex_staging_allocs = vertex_staging_allocs;
+    model->index_staging_buffers = index_staging_buffers;
+    model->index_staging_allocs = index_staging_allocs;
+    model->vertex_buffers = vertex_buffers;
+    model->vertex_allocs = vertex_allocs;
+    model->index_buffers = index_buffers;
+    model->index_allocs = index_allocs;
+    model->index_counts = index_counts;
+    model->primitive_count = primitive_count;
   }
 
   // Work with all textures and the related global descriptor
@@ -1279,14 +1279,13 @@ void VK_PushMap(vk_rend_t *rend, primitive_t *primitives,
       vkCreateImageView(rend->device, &image_view_info, NULL,
                         &texture_views[t]);
     }
-    rend->map.textures = vk_textures;
-    rend->map.textures_allocs = texture_allocs;
-    rend->map.textures_staging = stagings;
-    rend->map.textures_staging_allocs = staging_allocs;
-    rend->map.texture_count = texture_count;
-    rend->map.texture_views = texture_views;
+    model->textures = vk_textures;
+    model->textures_allocs = texture_allocs;
+    model->textures_staging = stagings;
+    model->textures_staging_allocs = staging_allocs;
+    model->texture_count = texture_count;
+    model->texture_views = texture_views;
   }
-
   vkEndCommandBuffer(cmd);
 
   VkSubmitInfo submit_info = {
@@ -1298,4 +1297,20 @@ void VK_PushMap(vk_rend_t *rend, primitive_t *primitives,
   vkQueueSubmit(rend->graphics_queue, 1, &submit_info, rend->transfer_fence);
 
   VK_CreateTexturesDescriptor(rend);
+}
+
+unsigned VK_PushModel(vk_rend_t *rend, primitive_t *primitives,
+                    size_t primitive_count, texture_t *textures,
+                    size_t texture_count) {
+  VK_UploadMeshToGpu(rend, &rend->models[rend->model_count], primitives,
+                     primitive_count, textures, texture_count);
+  rend->model_count++;
+  return 0;
+}
+
+void VK_PushMap(vk_rend_t *rend, primitive_t *primitives,
+                size_t primitive_count, texture_t *textures,
+                size_t texture_count) {
+  VK_UploadMeshToGpu(rend, &rend->map, primitives, primitive_count, textures,
+                     texture_count);
 }

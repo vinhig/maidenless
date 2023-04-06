@@ -90,7 +90,8 @@ game_t *G_CreateGame(char *base) {
   return game;
 }
 
-bool G_LoadMap(client_t *client, game_t *game, char *map_path) {
+bool G_LoadGLTF(game_t *game, primitive_t **p, unsigned *p_c, texture_t **t,
+                unsigned *t_c, char *map_path) {
   char *complete_map_path = G_GetCompletePath(game->base, map_path);
 
   FILE *f = fopen(complete_map_path, "rb");
@@ -328,6 +329,29 @@ bool G_LoadMap(client_t *client, game_t *game, char *map_path) {
     }
   }
 
+  *p = primitives;
+  *p_c = primitive_count;
+  *t = textures;
+  *t_c = curr_texture;
+
+  cgltf_free(data);
+
+  free(buff);
+
+  return true;
+}
+
+bool G_LoadMap(client_t *client, game_t *game, char *map_path) {
+  primitive_t *primitives;
+  unsigned primitive_count;
+  texture_t *textures;
+  unsigned texture_count;
+
+  if (!G_LoadGLTF(game, &primitives, &primitive_count, &textures,
+                  &texture_count, map_path)) {
+    return false;
+  }
+
   if (game->current_mesh) {
     G_DestroyCollisionMap(game->current_mesh);
   }
@@ -335,21 +359,95 @@ bool G_LoadMap(client_t *client, game_t *game, char *map_path) {
   game->current_mesh = G_LoadCollisionMap(primitives, primitive_count);
 
   VK_PushMap(CL_GetRend(client), primitives, primitive_count, textures,
-             curr_texture);
+             texture_count);
 
-  for(unsigned i = 0; i < primitive_count; i++) {
+  for (unsigned i = 0; i < primitive_count; i++) {
     free(primitives[i].indices);
     free(primitives[i].vertices);
   }
-  for(unsigned i = 0; i < curr_texture; i++) {
+  for (unsigned i = 0; i < primitive_count; i++) {
     free(textures[i].data);
   }
   free(primitives);
   free(textures);
 
-  cgltf_free(data);
-  free(complete_map_path);
-  free(buff);
+  return true;
+}
+
+bool G_LoadEnemies(client_t *client, game_t *game, toml_table_t *enemies) {
+  for (int i = 0;; i++) {
+    const char *key = toml_key_in(enemies, i);
+    if (!key) {
+      break;
+    }
+    toml_table_t *enemy = toml_table_in(enemies, key);
+    toml_datum_t enemy_path = toml_string_in(enemy, "mesh");
+    if (!enemy_path.ok) {
+      printf("Enemy `%s` must have a mesh field describing the path to the "
+             "3D model.\n",
+             key);
+      return false;
+    }
+
+    primitive_t *primitives;
+    unsigned primitive_count;
+    texture_t *textures;
+    unsigned texture_count;
+
+    if (!G_LoadGLTF(game, &primitives, &primitive_count, &textures,
+                    &texture_count, enemy_path.u.s)) {
+      printf("Enemy `%s` has an invalid path to 3D model or the model failed "
+             "to be loaded.\n",
+             key);
+      return false;
+    }
+
+    // size_t enemy_handle =
+    //     VK_PushModel(CL_GetRend(client), primitives, primitive_count, textures,
+    //                  texture_count);
+
+    vec3 pos;
+    toml_array_t *enemy_pos = toml_array_in(enemy, "position");
+    if (!enemy_pos) {
+      printf("Enemy `%s` must have a position field [x, y, z].\n", key);
+    } else {
+      toml_datum_t x = toml_double_at(enemy_pos, 0);
+      toml_datum_t y = toml_double_at(enemy_pos, 1);
+      toml_datum_t z = toml_double_at(enemy_pos, 2);
+      if (!x.ok || !y.ok || !z.ok) {
+        printf("Enemy `%s` must have a position field [x, y, z]. Each "
+               "component has to be a number.\n",
+               key);
+        return false;
+      }
+
+      pos[0] = (float)x.u.d;
+      pos[1] = (float)y.u.d;
+      pos[2] = (float)z.u.d;
+
+      printf("pos: %f, %f, %f\n", pos[0], pos[1], pos[2]);
+    }
+    vec3 rot;
+    toml_array_t *enemy_rot = toml_array_in(enemy, "rotation");
+    if (enemy_rot) {
+      toml_datum_t x = toml_double_at(enemy_rot, 0);
+      toml_datum_t y = toml_double_at(enemy_rot, 1);
+      toml_datum_t z = toml_double_at(enemy_rot, 2);
+      if (!x.ok || !y.ok || !z.ok) {
+        printf("Enemy `%s` must have a rotation field [x, y, z] where each"
+               "component has to be a number.\n",
+               key);
+        return false;
+      }
+
+      rot[0] = (float)x.u.d;
+      rot[1] = (float)y.u.d;
+      rot[2] = (float)z.u.d;
+
+      printf("rot: %f, %f, %f\n", rot[0], rot[1], rot[2]);
+    }
+  }
+
   return true;
 }
 
@@ -393,6 +491,20 @@ bool G_LoadCurrentScene(client_t *client, game_t *game) {
   printf("Finished!\n");
 
   free(level_path);
+
+  printf("Loading enemies...\n");
+
+  toml_table_t *enemies = toml_table_in(scene->def, "enemies");
+  if (!enemies) {
+    printf("No enemy.\n");
+  } else {
+    if (!G_LoadEnemies(client, game, enemies)) {
+      printf("Failed to load enemies.\n");
+      return false;
+    }
+  }
+
+  printf("Loading finished...\n");
 
   return true;
 }

@@ -1,2 +1,9 @@
 [scene]
 map = "playground.glb"
+
+[enemies]
+
+[enemies.plant1]
+mesh = "plant.glb"
+position = [2.9, -3.7, 2.1]
+rotation = [0.0, 0.0, 0.0]
