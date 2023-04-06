@@ -403,7 +403,8 @@ bool G_LoadEnemies(client_t *client, game_t *game, toml_table_t *enemies) {
     }
 
     // size_t enemy_handle =
-    //     VK_PushModel(CL_GetRend(client), primitives, primitive_count, textures,
+    //     VK_PushModel(CL_GetRend(client), primitives, primitive_count,
+    //     textures,
     //                  texture_count);
 
     vec3 pos;
@@ -548,24 +549,23 @@ game_state_t G_TickGame(client_t *client, game_t *game) {
                                       0.8, false, &t);
   if (!collided) {
     gravity[1] *= 0.12;
-    glm_vec3_add(gravity, game->fps_pos, game->fps_pos);
   } else {
-    // printf("foot_pos = {%f, %f, %f}\n", foot_pos[0], foot_pos[1],
-    // foot_pos[2]); printf("game->fps_pos = {%f, %f, %f}\n", game->fps_pos[0],
-    // game->fps_pos[1],
-    //        game->fps_pos[2]);
-    // printf("mvnt = {%f, %f, %f}\n", mvnt[0], mvnt[1], mvnt[2]);
     gravity[1] = (0.7 - t);
-    glm_vec3_add(gravity, game->fps_pos, game->fps_pos);
   }
+  glm_vec3_add(gravity, game->fps_pos, game->fps_pos);
 
-  if (!G_CollisionRayQuery(game->current_mesh, foot_pos, mvnt, 0.35, true,
-                           NULL)) {
+  bool collided2 =
+      G_CollisionRayQuery(game->current_mesh, foot_pos, mvnt, 0.35, true, &t);
 
-    mvnt[0] *= 0.24;
+  if (!collided2) {
+    mvnt[0] *= 0.22;
     mvnt[1] = 0.0;
-    mvnt[2] *= 0.24;
-
+    mvnt[2] *= 0.22;
+    glm_vec3_add(mvnt, game->fps_pos, game->fps_pos);
+  } else {
+    mvnt[0] *= 0.22;
+    mvnt[1] = 0.0;
+    mvnt[2] *= 0.22;
     glm_vec3_add(mvnt, game->fps_pos, game->fps_pos);
   }
 

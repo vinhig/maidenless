@@ -128,9 +128,17 @@ bool G_CollisionRayQuery(collision_mesh_t *mesh, vec3 orig, vec3 dir,
     triangle_t *triangle = &mesh->triangles[t];
     vec3 tuv;
     if (G_TestTriangle(triangle, orig, dir, distance, tuv)) {
-      // printf("tuv:{%f, %f, %f}\n", tuv[0], tuv[1], tuv[2]);
+      float t = tuv[0];
       if (corr != NULL) {
-        *corr = tuv[0];
+        *corr = t;
+      }
+
+      if (movement) {
+        vec3 new_n = {-triangle->n[2], 0.0, triangle->n[0]};
+        float d = glm_vec3_dot(new_n, dir);
+        dir[0] = new_n[0] * d;
+        dir[1] = 0.0;
+        dir[2] = new_n[2] * d;
       }
       return true;
     }
