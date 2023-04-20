@@ -6,6 +6,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+typedef struct intersection_t {
+  float t;
+  vec3 n;
+} intersection_t;
+
 typedef struct triangle_t {
   vec3 a;
   vec3 b;
@@ -124,27 +129,48 @@ bool G_TestTriangle(triangle_t *triangle, vec3 orig, vec3 dir, float distance,
 bool G_CollisionRayQuery(collision_mesh_t *mesh, vec3 orig, vec3 dir,
                          float distance, bool movement, float *corr) {
   // A shame, really
+  intersection_t intersections[10];
+  unsigned intersection_count = 0;
   for (unsigned t = 0; t < mesh->triangle_count; t++) {
     triangle_t *triangle = &mesh->triangles[t];
     vec3 tuv;
-    if (G_TestTriangle(triangle, orig, dir, distance, tuv)) {
-      float t = tuv[0];
-      if (corr != NULL) {
-        *corr = t;
-      }
 
-      if (movement) {
-        vec3 new_n = {-triangle->n[2], 0.0, triangle->n[0]};
-        float d = glm_vec3_dot(new_n, dir);
-        dir[0] = new_n[0] * d;
-        dir[1] = 0.0;
-        dir[2] = new_n[2] * d;
-      }
-      return true;
+    if (G_TestTriangle(triangle, orig, dir, distance, tuv)) {
+      intersections[intersection_count].n[0] = triangle->n[0];
+      intersections[intersection_count].n[1] = triangle->n[1];
+      intersections[intersection_count].n[2] = triangle->n[2];
+      intersections[intersection_count].t = tuv[0];
+      intersection_count++;
     }
   }
 
-  return false;
+  if (intersection_count == 0) {
+    return false;
+  }
+
+  // Find closest intersection;
+  unsigned idx = 0;
+  float min_dis = 100.0;
+  for (unsigned i = 0; i < intersection_count; i++) {
+    if (min_dis > intersections[i].t) {
+      idx = i;
+      min_dis = intersections[i].t;
+    }
+  }
+
+  float t = intersections[idx].t;
+  if (corr != NULL) {
+    *corr = t;
+  }
+
+  if (movement) {
+    vec3 new_n = {-intersections[idx].n[2], 0.0, intersections[idx].n[0]};
+    float d = glm_vec3_dot(new_n, dir);
+    dir[0] = new_n[0] * d;
+    dir[1] = 0.0;
+    dir[2] = new_n[2] * d;
+  }
+  return true;
 }
 
 void G_DestroyCollisionMap(collision_mesh_t *mesh) {

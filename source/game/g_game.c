@@ -563,10 +563,14 @@ game_state_t G_TickGame(client_t *client, game_t *game) {
     mvnt[2] *= 0.22;
     glm_vec3_add(mvnt, game->fps_pos, game->fps_pos);
   } else {
-    mvnt[0] *= 0.22;
-    mvnt[1] = 0.0;
-    mvnt[2] *= 0.22;
-    glm_vec3_add(mvnt, game->fps_pos, game->fps_pos);
+    bool collided_with_updated =
+        G_CollisionRayQuery(game->current_mesh, foot_pos, mvnt, 0.35, true, &t);
+    if (!collided_with_updated) {
+      mvnt[0] *= 0.22;
+      mvnt[1] = 0.0;
+      mvnt[2] *= 0.22;
+      glm_vec3_add(mvnt, game->fps_pos, game->fps_pos);
+    }
   }
 
   // Construct game state
