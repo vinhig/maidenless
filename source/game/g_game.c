@@ -224,6 +224,13 @@ bool G_LoadGLTF(game_t *game, primitive_t **p, unsigned *p_c, texture_t **t,
         textures[curr_texture].height = h;
         textures[curr_texture].c = n;
         textures[curr_texture].data = data;
+        if (base_color.texture->name && strlen(base_color.texture->name) != 0) {
+          textures[curr_texture].label = memcpy(
+              malloc(strlen(base_color.texture->name) + 1),
+              base_color.texture->name, strlen(base_color.texture->name));
+        } else {
+          textures[curr_texture].label = NULL;
+        }
         curr_texture++;
       }
 

@@ -170,6 +170,7 @@ bool G_CollisionRayQuery(collision_mesh_t *mesh, vec3 orig, vec3 dir,
     dir[1] = 0.0;
     dir[2] = new_n[2] * d;
   }
+  
   return true;
 }
 

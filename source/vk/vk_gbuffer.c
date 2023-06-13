@@ -9,6 +9,106 @@
 
 #include <SDL2/SDL_vulkan.h>
 
+render_target_t VK_CreateRenderTarget(vk_rend_t *rend, unsigned width,
+                                      unsigned height, VkFormat format,
+                                      char *label) {
+  render_target_t render_target;
+  VkExtent3D extent = {
+      .depth = 1,
+      .width = width,
+      .height = height,
+  };
+
+  VkImageCreateInfo image_info = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+      .imageType = VK_IMAGE_TYPE_2D,
+      .format = format,
+      .extent = extent,
+      .mipLevels = 1,
+      .arrayLayers = 1,
+      .samples = VK_SAMPLE_COUNT_1_BIT,
+      .tiling = VK_IMAGE_TILING_OPTIMAL,
+      .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+  };
+
+  if (format == VK_FORMAT_D32_SFLOAT) {
+    image_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+                       VK_IMAGE_USAGE_SAMPLED_BIT;
+  }
+
+  VmaAllocationCreateInfo alloc_info = {
+      .usage = VMA_MEMORY_USAGE_GPU_ONLY,
+      .requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+  };
+
+  vmaCreateImage(rend->allocator, &image_info, &alloc_info,
+                 &render_target.image, &render_target.alloc, NULL);
+
+  VkImageViewCreateInfo image_view_info = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+      .viewType = VK_IMAGE_VIEW_TYPE_2D,
+      .image = render_target.image,
+      .format = format,
+      .subresourceRange.baseMipLevel = 0,
+      .subresourceRange.levelCount = 1,
+      .subresourceRange.baseArrayLayer = 0,
+      .subresourceRange.layerCount = 1,
+      .subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+  };
+
+  if (format == VK_FORMAT_D32_SFLOAT) {
+    image_view_info.subresourceRange.aspectMask =
+        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    image_view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+  }
+
+  VkClearValue clear_color;
+  if (format == VK_FORMAT_D32_SFLOAT) {
+    clear_color.depthStencil.depth = 1.0;
+  } else {
+    clear_color.color.float32[0] = 0.0;
+    clear_color.color.float32[1] = 0.0;
+    clear_color.color.float32[2] = 0.0;
+    clear_color.color.float32[3] = 0.0;
+  }
+
+  vkCreateImageView(rend->device, &image_view_info, NULL,
+                    &render_target.image_view);
+
+  VkRenderingAttachmentInfo attachment_info = {
+      .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+      .imageView = render_target.image_view,
+      .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+      .clearValue = clear_color,
+  };
+
+  render_target.attachment_info = attachment_info;
+
+  char image_name_view[1024];
+  sprintf(image_name_view, "%s_view", label);
+
+  VkDebugUtilsObjectNameInfoEXT image_name = {
+      .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
+      .objectType = VK_OBJECT_TYPE_IMAGE,
+      .objectHandle = (uint64_t)render_target.image,
+      .pObjectName = label,
+  };
+
+  VkDebugUtilsObjectNameInfoEXT image_view_name = {
+      .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
+      .objectType = VK_OBJECT_TYPE_IMAGE,
+      .objectHandle = (uint64_t)render_target.image,
+      .pObjectName = image_name_view,
+  };
+
+  vkSetDebugUtilsObjectName(rend->device, &image_name);
+  vkSetDebugUtilsObjectName(rend->device, &image_view_name);
+
+  return render_target;
+}
+
 bool VK_InitGBuffer(vk_rend_t *rend) {
   if (rend->gbuffer) {
     printf("GBuffer seems to be already initialized.\n");
@@ -16,6 +116,123 @@ bool VK_InitGBuffer(vk_rend_t *rend) {
   }
 
   rend->gbuffer = calloc(1, sizeof(vk_gbuffer_t));
+
+  render_target_t position = VK_CreateRenderTarget(
+      rend, rend->width, rend->height, VK_FORMAT_R32G32B32A32_SFLOAT,
+      "render_target_position");
+  render_target_t normal = VK_CreateRenderTarget(
+      rend, rend->width, rend->height, VK_FORMAT_R32G32B32A32_SFLOAT,
+      "render_target_normal");
+  render_target_t albedo = VK_CreateRenderTarget(
+      rend, rend->width, rend->height, VK_FORMAT_R16G16B16A16_SFLOAT,
+      "render_target_albedo");
+  render_target_t depth =
+      VK_CreateRenderTarget(rend, rend->width, rend->height,
+                            VK_FORMAT_D32_SFLOAT, "render_target_depth");
+
+  rend->gbuffer->position_target = position;
+  rend->gbuffer->normal_target = normal;
+  rend->gbuffer->albedo_target = albedo;
+  rend->gbuffer->depth_target = depth;
+
+  // Prepare render targets by setting optimal tiling
+  {
+    vkWaitForFences(rend->device, 1, &rend->transfer_fence, true, UINT64_MAX);
+    vkResetFences(rend->device, 1, &rend->transfer_fence);
+
+    VkImageMemoryBarrier image_memory_barrier_position = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        // .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        .image = position.image,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        }};
+
+    VkImageMemoryBarrier image_memory_barrier_normal = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        // .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        .image = normal.image,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        }};
+
+    VkImageMemoryBarrier image_memory_barrier_albedo = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        // .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        .image = albedo.image,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        }};
+
+    VkImageMemoryBarrier image_memory_barrier_depth = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        // .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        .image = depth.image,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        }};
+
+    VkCommandBufferBeginInfo begin_info = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+    };
+
+    vkBeginCommandBuffer(rend->transfer_command_buffer, &begin_info);
+
+    VkImageMemoryBarrier barriers[4] = {
+        image_memory_barrier_albedo,
+        image_memory_barrier_normal,
+        image_memory_barrier_position,
+        image_memory_barrier_depth,
+    };
+    vkCmdPipelineBarrier(rend->transfer_command_buffer,
+                         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0,
+                         NULL, 0, NULL, 3, &barriers[0]);
+
+    vkCmdPipelineBarrier(rend->transfer_command_buffer,
+                         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT, 0, 0, NULL,
+                         0, NULL, 1, &barriers[3]);
+
+    vkEndCommandBuffer(rend->transfer_command_buffer);
+
+    VkSubmitInfo submit_info = {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &rend->transfer_command_buffer,
+    };
+
+    vkQueueSubmit(rend->graphics_queue, 1, &submit_info, rend->transfer_fence);
+  }
 
   {
     VkVertexInputBindingDescription main_binding = {
@@ -134,8 +351,13 @@ bool VK_InitGBuffer(vk_rend_t *rend) {
         .pNext = NULL,
         .logicOpEnable = VK_FALSE,
         .logicOp = VK_LOGIC_OP_COPY,
-        .attachmentCount = 1,
-        .pAttachments = &blend_attachment,
+        .attachmentCount = 3,
+        .pAttachments =
+            &(VkPipelineColorBlendAttachmentState[]){
+                [0] = blend_attachment,
+                [1] = blend_attachment,
+                [2] = blend_attachment,
+            }[0],
     };
 
     VkPushConstantRange push_constant_info = {
@@ -155,7 +377,6 @@ bool VK_InitGBuffer(vk_rend_t *rend) {
         .pushConstantRangeCount = 1,
         .pSetLayouts = &layouts[0],
         .setLayoutCount = 2,
-        .pNext = NULL,
     };
 
     vkCreatePipelineLayout(rend->device, &pipeline_layout_info, NULL,
@@ -174,8 +395,13 @@ bool VK_InitGBuffer(vk_rend_t *rend) {
 
     const VkPipelineRenderingCreateInfo pipeline_rendering_create_info = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-        .colorAttachmentCount = 1,
-        .pColorAttachmentFormats = &rend->swapchain_format,
+        .colorAttachmentCount = 3,
+        .pColorAttachmentFormats =
+            &(VkFormat[]){
+                [0] = VK_FORMAT_R32G32B32A32_SFLOAT,
+                [1] = VK_FORMAT_R32G32B32A32_SFLOAT,
+                [2] = VK_FORMAT_R16G16B16A16_SFLOAT,
+            }[0],
         .depthAttachmentFormat = VK_FORMAT_D32_SFLOAT,
     };
 
@@ -201,58 +427,60 @@ bool VK_InitGBuffer(vk_rend_t *rend) {
     vkDestroyShaderModule(rend->device, fragment_shader, NULL);
   }
 
-  // Create depth texture
-  {
-    // hey
-    VkExtent3D extent = {
-        .depth = 1,
-        .width = rend->width,
-        .height = rend->height,
-    };
-
-    VkImageCreateInfo depth_image_info = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .imageType = VK_IMAGE_TYPE_2D,
-        .format = VK_FORMAT_D32_SFLOAT,
-        .extent = extent,
-        .mipLevels = 1,
-        .arrayLayers = 1,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-    };
-
-    VmaAllocationCreateInfo depth_alloc_info = {
-        .usage = VMA_MEMORY_USAGE_GPU_ONLY,
-        .requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-    };
-
-    vmaCreateImage(rend->allocator, &depth_image_info, &depth_alloc_info,
-                   &rend->gbuffer->depth_map_image,
-                   &rend->gbuffer->depth_map_alloc, NULL);
-
-    VkImageViewCreateInfo depth_view_info = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .image = rend->gbuffer->depth_map_image,
-        .format = VK_FORMAT_D32_SFLOAT,
-        .subresourceRange.baseMipLevel = 0,
-        .subresourceRange.levelCount = 1,
-        .subresourceRange.baseArrayLayer = 0,
-        .subresourceRange.layerCount = 1,
-        .subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
-    };
-
-    vkCreateImageView(rend->device, &depth_view_info, NULL,
-                      &rend->gbuffer->depth_map_view);
-  }
-
   return true;
 }
 
-void VK_DrawGBuffer(vk_rend_t *rend, game_state_t* game) {
+void VK_DrawGBuffer(vk_rend_t *rend, game_state_t *game) {
   vk_gbuffer_t *gbuffer = rend->gbuffer;
   VkCommandBuffer cmd = rend->graphics_command_buffer[rend->current_frame % 3];
+
+  if (rend->current_frame != 0) {
+    VK_TransitionColorTexture(cmd, rend->gbuffer->position_target.image,
+                              VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                              VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                              VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                              VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                              VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
+    VK_TransitionColorTexture(cmd, rend->gbuffer->albedo_target.image,
+                              VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                              VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                              VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                              VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                              VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
+    VK_TransitionColorTexture(cmd, rend->gbuffer->normal_target.image,
+                              VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                              VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                              VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                              VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                              VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
+    VK_TransitionDepthTexture(cmd, rend->gbuffer->depth_target.image,
+                              VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                              VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                              VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                              VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+                              VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
+  }
+
+  VkRenderingAttachmentInfo attachments_info[3] = {
+      [0] = rend->gbuffer->position_target.attachment_info,
+      [1] = rend->gbuffer->normal_target.attachment_info,
+      [2] = rend->gbuffer->albedo_target.attachment_info,
+  };
+
+  VkRenderingInfo render_info = {
+      .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+      .renderArea =
+          {
+              .extent = {.width = rend->width, .height = rend->height},
+              .offset = {.x = 0, .y = 0},
+          },
+      .layerCount = 1,
+      .colorAttachmentCount = 3,
+      .pColorAttachments = &attachments_info[0],
+      .pDepthAttachment = &rend->gbuffer->depth_target.attachment_info,
+  };
+
+  vkCmdBeginRendering(cmd, &render_info);
 
   vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, gbuffer->pipeline);
 
@@ -274,12 +502,31 @@ void VK_DrawGBuffer(vk_rend_t *rend, game_state_t* game) {
 
     vkCmdDrawIndexed(cmd, rend->map.index_counts[i], 1, 0, 0, 0);
   }
+
+  vkCmdEndRendering(cmd);
 }
 
 void VK_DestroyGBuffer(vk_rend_t *rend) {
-  vkDestroyImageView(rend->device, rend->gbuffer->depth_map_view, NULL);
-  vmaDestroyImage(rend->allocator, rend->gbuffer->depth_map_image,
-                  rend->gbuffer->depth_map_alloc);
+  vkDestroyImageView(rend->device, rend->gbuffer->depth_target.image_view,
+                     NULL);
+  vmaDestroyImage(rend->allocator, rend->gbuffer->depth_target.image,
+                  rend->gbuffer->depth_target.alloc);
+
+  vkDestroyImageView(rend->device, rend->gbuffer->position_target.image_view,
+                     NULL);
+  vmaDestroyImage(rend->allocator, rend->gbuffer->position_target.image,
+                  rend->gbuffer->position_target.alloc);
+
+  vkDestroyImageView(rend->device, rend->gbuffer->albedo_target.image_view,
+                     NULL);
+  vmaDestroyImage(rend->allocator, rend->gbuffer->albedo_target.image,
+                  rend->gbuffer->albedo_target.alloc);
+
+  vkDestroyImageView(rend->device, rend->gbuffer->normal_target.image_view,
+                     NULL);
+  vmaDestroyImage(rend->allocator, rend->gbuffer->normal_target.image,
+                  rend->gbuffer->normal_target.alloc);
+
   vkDestroyPipeline(rend->device, rend->gbuffer->pipeline, NULL);
   vkDestroyPipelineLayout(rend->device, rend->gbuffer->pipeline_layout, NULL);
 }

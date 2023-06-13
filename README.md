@@ -6,7 +6,7 @@ Maidenless Engine is an MIT multi-platform 3D engine that enables developers and
 
 * C compiler (clang or gcc).
 * Latest [Vulkan SDK](https://vulkan.lunarg.com/).
-* Meson build system.
+* [Meson](https://mesonbuild.com/) build system.
 
 ## Requirements
 

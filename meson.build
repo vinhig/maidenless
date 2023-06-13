@@ -14,6 +14,7 @@ vulkan = dependency('Vulkan')
 shaders = [
   'source/shaders/gbuffer.vert.glsl',
   'source/shaders/gbuffer.frag.glsl',
+  'source/shaders/shading.comp.glsl',
 ]
 
 add_global_arguments(
@@ -55,6 +56,7 @@ exe = executable('maidenless',
 
   'source/vk/vk.c',
   'source/vk/vk_gbuffer.c',
+  'source/vk/vk_shading.c',
 
   'source/game/g_game.c',
   'source/game/g_collision.c',

@@ -10,16 +10,76 @@
 #include "game/g_game.h"
 #include <SDL2/SDL_vulkan.h>
 
+void VK_TransitionColorTexture(VkCommandBuffer cmd, VkImage image,
+                               VkImageLayout from_layout,
+                               VkImageLayout to_layout,
+                               VkPipelineStageFlags from_stage,
+                               VkPipelineStageFlags to_stage,
+                               VkAccessFlags access_mask) {
+  VkImageMemoryBarrier barrier = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+      // .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+      .dstAccessMask = access_mask,
+      .oldLayout = from_layout,
+      .newLayout = to_layout,
+      .image = image,
+      .subresourceRange = {
+          .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+          .baseMipLevel = 0,
+          .levelCount = 1,
+          .baseArrayLayer = 0,
+          .layerCount = 1,
+      }};
+
+  vkCmdPipelineBarrier(cmd, from_stage, to_stage, 0, 0, NULL, 0, NULL, 1,
+                       &barrier);
+}
+
+void VK_TransitionDepthTexture(VkCommandBuffer cmd, VkImage image,
+                               VkImageLayout from_layout,
+                               VkImageLayout to_layout,
+                               VkPipelineStageFlags from_stage,
+                               VkPipelineStageFlags to_stage,
+                               VkAccessFlags access_mask) {
+  VkImageMemoryBarrier barrier = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+      // .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+      .dstAccessMask = access_mask,
+      .oldLayout = from_layout,
+      .newLayout = to_layout,
+      .image = image,
+      .subresourceRange = {
+          .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+          .baseMipLevel = 0,
+          .levelCount = 1,
+          .baseArrayLayer = 0,
+          .layerCount = 1,
+      }};
+
+  vkCmdPipelineBarrier(cmd, from_stage, to_stage, 0, 0, NULL, 0, NULL, 1,
+                       &barrier);
+}
+
+VkResult (*vkSetDebugUtilsObjectName)(
+    VkDevice device, const VkDebugUtilsObjectNameInfoEXT *pNameInfo) = NULL;
+
 const char *vk_instance_layers[] = {
     "VK_LAYER_KHRONOS_validation",
 };
 const unsigned vk_instance_layer_count = 1;
 
+const char *vk_instance_extensions[] = {VK_EXT_DEBUG_UTILS_EXTENSION_NAME};
+const unsigned vk_instance_extension_count = 1;
+
 const char *vk_device_extensions[] = {
-    VK_KHR_SWAPCHAIN_EXTENSION_NAME, "VK_KHR_dynamic_rendering",
+    VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+    "VK_KHR_dynamic_rendering",
+    VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+    VK_KHR_RAY_QUERY_EXTENSION_NAME,
+    VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
     "VK_EXT_shader_object", // No supported at the moment, saddy sad
 };
-const unsigned vk_device_extension_count = 2;
+const unsigned vk_device_extension_count = 5;
 
 const char *vk_device_layers[] = {
     "VK_EXT_shader_object",
@@ -125,9 +185,16 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
                                      &instance_extension_count,
                                      (const char **)instance_extensions);
 
-    instance_extensions[instance_extension_count] =
-        VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
-    instance_extension_count++;
+    for (unsigned h = 0; h < vk_instance_extension_count; h++) {
+      instance_extensions[h + instance_extension_count] =
+          (char *)vk_instance_extensions[h];
+    }
+
+    instance_extension_count += vk_instance_extension_count;
+
+    for (unsigned h = 0; h < instance_extension_count; h++) {
+      printf("%s\n", instance_extensions[h]);
+    }
 
     VkInstanceCreateInfo instance_info = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
@@ -326,6 +393,8 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
         .descriptorBindingSampledImageUpdateAfterBind = VK_TRUE,
         .descriptorBindingVariableDescriptorCount = VK_TRUE,
         .runtimeDescriptorArray = VK_TRUE,
+        .descriptorIndexing = VK_TRUE,
+        .bufferDeviceAddress = VK_TRUE,
     };
 
     VkPhysicalDeviceVulkan13Features vulkan_13 = {
@@ -340,6 +409,26 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
     //    };
     //
     //    vulkan_12.pNext = &vulkan_shader_object;
+
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR acc_structure = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
+        .accelerationStructure = VK_TRUE,
+    };
+    vulkan_12.pNext = &acc_structure;
+
+    VkPhysicalDeviceRayTracingPipelineFeaturesKHR ray_pipeline = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR,
+        .rayTracingPipeline = VK_TRUE,
+    };
+    acc_structure.pNext = &ray_pipeline;
+
+    VkPhysicalDeviceRayQueryFeaturesKHR ray_query = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR,
+        .rayQuery = true,
+    };
+    ray_pipeline.pNext = &ray_query;
 
     VkDeviceCreateInfo device_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
@@ -551,7 +640,7 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
         .binding = 0,
         .descriptorCount = 1,
         .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT,
     };
 
     VkDescriptorSetLayoutCreateInfo desc_info = {
@@ -679,9 +768,17 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
                              &rend->global_textures_desc_set);
   }
 
+  vkSetDebugUtilsObjectName =
+      (PFN_vkSetDebugUtilsObjectNameEXT)vkGetInstanceProcAddr(
+          rend->instance, "vkSetDebugUtilsObjectNameEXT");
+
   // Initialize other parts of the renderer
   if (!VK_InitGBuffer(rend)) {
     VK_PUSH_ERROR("Couldn't create a specific pipeline: GBuffer.");
+  }
+
+  if (!VK_InitShading(rend)) {
+    VK_PUSH_ERROR("Couldn't create a specific pipeline: Shadow.");
   }
 
   return rend;
@@ -717,8 +814,6 @@ void VK_Draw(vk_rend_t *rend, game_state_t *game) {
       rend->swapchain_present_semaphore[rend->current_frame % 3], NULL,
       &image_index);
 
-  vkResetCommandBuffer(cmd, 0);
-
   // Copy game state first person data
   memcpy(&rend->global_ubo, &game->fps, sizeof(game->fps));
 
@@ -736,6 +831,10 @@ void VK_Draw(vk_rend_t *rend, game_state_t *game) {
   };
 
   vkBeginCommandBuffer(cmd, &begin_info);
+
+  VK_DrawGBuffer(rend, game);
+
+  VK_DrawShading(rend, game);
 
   // Before rendering, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR ->
   // VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL.
@@ -759,34 +858,22 @@ void VK_Draw(vk_rend_t *rend, game_state_t *game) {
                        NULL, 0, NULL, 1, &image_memory_barrier_1);
 
   VkClearValue clear_color;
-  clear_color.color.float32[0] = 100.0f / 255.0f;
-  clear_color.color.float32[1] = 237.0f / 255.0f;
-  clear_color.color.float32[2] = sin((float)rend->current_frame / 120.f);
+  clear_color.color.float32[0] = sin(-1 * (float)rend->current_frame / 10.f);
+  clear_color.color.float32[1] = cos((float)rend->current_frame / 10.f);
+  clear_color.color.float32[2] = sin((float)rend->current_frame / 10.f);
   clear_color.color.float32[3] = 1.0;
 
-  VkClearValue clear_depth;
-  clear_depth.depthStencil.depth = 1.0;
-
-  VkRenderingAttachmentInfoKHR color_attachment_info = {
-      .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR,
+  VkRenderingAttachmentInfo color_attachment_info = {
+      .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
       .imageView = rend->swapchain_image_views[image_index],
-      .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR,
+      .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
       .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
       .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
       .clearValue = clear_color,
   };
 
-  VkRenderingAttachmentInfoKHR depth_attachment_info = {
-      .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR,
-      .imageView = rend->gbuffer->depth_map_view,
-      .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR,
-      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-      .clearValue = clear_depth,
-  };
-
-  const VkRenderingInfo render_info = {
-      .sType = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR,
+  VkRenderingInfo render_info = {
+      .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
       .renderArea =
           {
               .extent = {.width = rend->width, .height = rend->height},
@@ -795,12 +882,9 @@ void VK_Draw(vk_rend_t *rend, game_state_t *game) {
       .layerCount = 1,
       .colorAttachmentCount = 1,
       .pColorAttachments = &color_attachment_info,
-      .pDepthAttachment = &depth_attachment_info,
   };
 
   vkCmdBeginRendering(cmd, &render_info);
-
-  VK_DrawGBuffer(rend, game);
 
   vkCmdEndRendering(cmd);
 
@@ -902,6 +986,7 @@ void VK_DestroyRend(vk_rend_t *rend) {
   vkDeviceWaitIdle(rend->device);
 
   VK_DestroyCurrentMap(rend);
+  VK_DestroyShading(rend);
   VK_DestroyGBuffer(rend);
 
   for (int i = 0; i < 3; i++) {
@@ -1278,6 +1363,17 @@ void VK_UploadMeshToGpu(vk_rend_t *rend, vk_model_t *model,
 
       vkCreateImageView(rend->device, &image_view_info, NULL,
                         &texture_views[t]);
+
+      if (texture->label) {
+        VkDebugUtilsObjectNameInfoEXT image_view_name = {
+            .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
+            .objectType = VK_OBJECT_TYPE_IMAGE_VIEW,
+            .objectHandle = (uint64_t)texture_views[t],
+            .pObjectName = texture->label,
+        };
+
+        vkSetDebugUtilsObjectName(rend->device, &image_view_name);
+      }
     }
     model->textures = vk_textures;
     model->textures_allocs = texture_allocs;
@@ -1300,8 +1396,8 @@ void VK_UploadMeshToGpu(vk_rend_t *rend, vk_model_t *model,
 }
 
 unsigned VK_PushModel(vk_rend_t *rend, primitive_t *primitives,
-                    size_t primitive_count, texture_t *textures,
-                    size_t texture_count) {
+                      size_t primitive_count, texture_t *textures,
+                      size_t texture_count) {
   VK_UploadMeshToGpu(rend, &rend->models[rend->model_count], primitives,
                      primitive_count, textures, texture_count);
   rend->model_count++;

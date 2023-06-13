@@ -23,6 +23,7 @@ typedef struct primitive_t {
 typedef struct texture_t {
   int width, height, c;
   unsigned char *data;
+  char* label;
 } texture_t;
 
 typedef struct vk_model_t vk_model_t;

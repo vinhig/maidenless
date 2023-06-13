@@ -14,16 +14,56 @@ bool VK_InitGBuffer(vk_rend_t *rend);
 void VK_DrawGBuffer(vk_rend_t *rend, game_state_t *game);
 void VK_DestroyGBuffer(vk_rend_t *rend);
 
+bool VK_InitShading(vk_rend_t *rend);
+void VK_DrawShading(vk_rend_t *rend, game_state_t *game);
+void VK_DestroyShading(vk_rend_t *rend);
+
 // VK utils
 VkShaderModule VK_LoadShaderModule(vk_rend_t *rend, const char *path);
+
+void VK_TransitionColorTexture(VkCommandBuffer cmd, VkImage image,
+                               VkImageLayout from_layout,
+                               VkImageLayout to_layout,
+                               VkPipelineStageFlags from_stage,
+                               VkPipelineStageFlags to_stage,
+                               VkAccessFlags access_mask);
+void VK_TransitionDepthTexture(VkCommandBuffer cmd, VkImage image,
+                               VkImageLayout from_layout,
+                               VkImageLayout to_layout,
+                               VkPipelineStageFlags from_stage,
+                               VkPipelineStageFlags to_stage,
+                               VkAccessFlags access_mask);
+
+extern VkResult (*vkSetDebugUtilsObjectName)(
+    VkDevice device, const VkDebugUtilsObjectNameInfoEXT *pNameInfo);
+
+typedef struct render_target_t {
+  VkImage image;
+  VkImageView image_view;
+  VmaAllocation alloc;
+  VkRenderingAttachmentInfo attachment_info;
+} render_target_t;
+
+typedef struct vk_shading_t {
+  VkPipelineLayout pipeline_layout;
+  VkPipeline pipeline;
+
+  VkDescriptorSetLayout hold_layout;
+  VkDescriptorSet hold_set;
+
+  VkImage shading_image;
+  VkImageView shading_view;
+  VmaAllocation shading_image_alloc;
+} vk_shading_t;
 
 typedef struct vk_gbuffer_t {
   VkPipelineLayout pipeline_layout;
   VkPipeline pipeline;
 
-  VkImage depth_map_image;
-  VkImageView depth_map_view;
-  VmaAllocation depth_map_alloc;
+  render_target_t depth_target;
+  render_target_t position_target;
+  render_target_t normal_target;
+  render_target_t albedo_target;
 } vk_gbuffer_t;
 
 typedef struct vk_model_t {
@@ -56,6 +96,7 @@ typedef struct vk_global_ubo_t {
   mat4 view;
   mat4 proj;
   mat4 view_proj;
+  vec4 view_dir;
 } vk_global_ubo_t;
 
 struct vk_rend_t {
@@ -101,6 +142,7 @@ struct vk_rend_t {
   VkSampler linear_sampler;
 
   vk_gbuffer_t *gbuffer;
+  vk_shading_t *shading;
 
   VmaAllocator allocator;
 
