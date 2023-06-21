@@ -39,8 +39,9 @@ bool G_CollisionRayQuery(collision_mesh_t *mesh, vec3 orig, vec3 dir,
                          float distance, bool movement, float *t);
 
 char *G_GetCompletePath(char *base, char *path) {
-  char *complete_path = malloc(strlen(base) + strlen(path) + 2);
-  sprintf(complete_path, "%s/%s", base, path);
+  unsigned len = strlen(base) + strlen(path) + 2;
+  char *complete_path = malloc(len);
+  snprintf(complete_path, len, "%s/%s", base, path);
 
   return complete_path;
 }

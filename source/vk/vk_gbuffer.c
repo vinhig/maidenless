@@ -87,7 +87,7 @@ render_target_t VK_CreateRenderTarget(vk_rend_t *rend, unsigned width,
   render_target.attachment_info = attachment_info;
 
   char image_name_view[1024];
-  sprintf(image_name_view, "%s_view", label);
+  snprintf(image_name_view, 1024, "%s_view", label);
 
   VkDebugUtilsObjectNameInfoEXT image_name = {
       .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,

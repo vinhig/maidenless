@@ -66,7 +66,7 @@ VkResult (*vkSetDebugUtilsObjectName)(
 const char *vk_instance_layers[] = {
     "VK_LAYER_KHRONOS_validation",
 };
-const unsigned vk_instance_layer_count = 1;
+const unsigned vk_instance_layer_count = 0;
 
 const char *vk_instance_extensions[] = {VK_EXT_DEBUG_UTILS_EXTENSION_NAME};
 const unsigned vk_instance_extension_count = 1;
@@ -74,12 +74,8 @@ const unsigned vk_instance_extension_count = 1;
 const char *vk_device_extensions[] = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
     "VK_KHR_dynamic_rendering",
-    VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
-    VK_KHR_RAY_QUERY_EXTENSION_NAME,
-    VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
-    "VK_EXT_shader_object", // No supported at the moment, saddy sad
 };
-const unsigned vk_device_extension_count = 5;
+const unsigned vk_device_extension_count = 2;
 
 const char *vk_device_layers[] = {
     "VK_EXT_shader_object",
@@ -309,7 +305,14 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
 
       // TODO: Check if ray-tracing is there
       // For now, we only take the first integrated hehe
-      if (property.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+      if (found_suitable &&
+          property.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+        physical_device = physical_devices[i];
+        found_suitable = true;
+        free(extensions);
+        free(formats);
+        free(layers);
+      } else if (!found_suitable) {
         physical_device = physical_devices[i];
         found_suitable = true;
         free(extensions);
@@ -318,7 +321,6 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
         break;
       }
 
-      printf("skipping because no VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU\n");
       free(extensions);
       free(formats);
       free(layers);
@@ -401,34 +403,6 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
         .dynamicRendering = VK_TRUE,
         .pNext = &vulkan_12};
-
-    //    VkPhysicalDeviceShaderObjectFeaturesEXT vulkan_shader_object = {
-    //        .sType =
-    //        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_OBJECT_FEATURES_EXT,
-    //        .shaderObject = VK_TRUE,
-    //    };
-    //
-    //    vulkan_12.pNext = &vulkan_shader_object;
-
-    VkPhysicalDeviceAccelerationStructureFeaturesKHR acc_structure = {
-        .sType =
-            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
-        .accelerationStructure = VK_TRUE,
-    };
-    vulkan_12.pNext = &acc_structure;
-
-    VkPhysicalDeviceRayTracingPipelineFeaturesKHR ray_pipeline = {
-        .sType =
-            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR,
-        .rayTracingPipeline = VK_TRUE,
-    };
-    acc_structure.pNext = &ray_pipeline;
-
-    VkPhysicalDeviceRayQueryFeaturesKHR ray_query = {
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR,
-        .rayQuery = true,
-    };
-    ray_pipeline.pNext = &ray_query;
 
     VkDeviceCreateInfo device_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
@@ -697,7 +671,7 @@ vk_rend_t *VK_CreateRend(client_t *client, unsigned width, unsigned height) {
 
   // Create the descriptor set holding all freaking textures
   {
-    unsigned max_bindless_resources = 16536;
+    unsigned max_bindless_resources = 16;
     // Create bindless descriptor pool
     VkDescriptorPoolSize pool_sizes_bindless[] = {
         {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, max_bindless_resources},

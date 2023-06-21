@@ -173,7 +173,7 @@ bool VK_InitShading(vk_rend_t *rend) {
       writes[i].pImageInfo = &image_infos[i];
     }
 
-    vkUpdateDescriptorSets(rend->device, 4, writes, 0, NULL);
+    vkUpdateDescriptorSets(rend->device, 4, &writes[0], 0, NULL);
 
     // Update descriptor set, link shading image (where the shading will be
     // written to)
