@@ -70,18 +70,10 @@ bool VK_InitShading(vk_rend_t *rend) {
         .pImmutableSamplers = NULL,
     };
 
-    VkDescriptorSetLayoutBinding acc_structure = {
-        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
-        .descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
-        .binding = 1,
-        .descriptorCount = 1,
-        .pImmutableSamplers = NULL,
-    };
-
     VkDescriptorSetLayoutBinding position_feature_buffer = {
         .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
         .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .binding = 2,
+        .binding = 1,
         .descriptorCount = 1,
         .pImmutableSamplers = NULL,
     };
@@ -89,7 +81,7 @@ bool VK_InitShading(vk_rend_t *rend) {
     VkDescriptorSetLayoutBinding normal_feature_buffer = {
         .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
         .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .binding = 3,
+        .binding = 2,
         .descriptorCount = 1,
         .pImmutableSamplers = NULL,
     };
@@ -97,7 +89,7 @@ bool VK_InitShading(vk_rend_t *rend) {
     VkDescriptorSetLayoutBinding albedo_feature_buffer = {
         .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
         .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .binding = 4,
+        .binding = 3,
         .descriptorCount = 1,
         .pImmutableSamplers = NULL,
     };
@@ -105,19 +97,19 @@ bool VK_InitShading(vk_rend_t *rend) {
     VkDescriptorSetLayoutBinding depth_feature_buffer = {
         .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
         .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .binding = 5,
+        .binding = 4,
         .descriptorCount = 1,
         .pImmutableSamplers = NULL,
     };
 
     VkDescriptorSetLayoutBinding bindings[] = {
-        render_target,         acc_structure,         position_feature_buffer,
-        normal_feature_buffer, albedo_feature_buffer, depth_feature_buffer,
+        render_target,         position_feature_buffer, normal_feature_buffer,
+        albedo_feature_buffer, depth_feature_buffer,
     };
 
     VkDescriptorSetLayoutCreateInfo hold_layout_info = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = 6,
+        .bindingCount = 5,
         .pBindings = &bindings[0],
     };
 
@@ -169,7 +161,7 @@ bool VK_InitShading(vk_rend_t *rend) {
       writes[i].descriptorCount = 1;
       writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
       writes[i].dstSet = rend->shading->hold_set;
-      writes[i].dstBinding = 2 + i;
+      writes[i].dstBinding = i + 1;
       writes[i].pImageInfo = &image_infos[i];
     }
 
@@ -281,6 +273,27 @@ void VK_DrawShading(vk_rend_t *rend, game_state_t *game) {
                           NULL);
 
   vkCmdDispatch(cmd, (rend->width + 16) / 16, (rend->height + 16) / 16, 1);
+
+  VkImageMemoryBarrier barrier = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+      .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+      .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+      .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+      .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+      .image = shading->shading_image,
+      .subresourceRange =
+          {
+              .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+              .baseMipLevel = 0,
+              .levelCount = 1,
+              .baseArrayLayer = 0,
+              .layerCount = 1,
+          },
+  };
+
+  vkCmdPipelineBarrier(cmd, VK_SHADER_STAGE_COMPUTE_BIT,
+                       VK_SHADER_STAGE_COMPUTE_BIT, 0, 0, NULL, 0, NULL, 1,
+                       &barrier);
 }
 
 void VK_DestroyShading(vk_rend_t *rend) {

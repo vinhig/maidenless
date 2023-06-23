@@ -791,6 +791,9 @@ void VK_Draw(vk_rend_t *rend, game_state_t *game) {
   // Copy game state first person data
   memcpy(&rend->global_ubo, &game->fps, sizeof(game->fps));
 
+  rend->global_ubo.view_dim[0] = rend->width;
+  rend->global_ubo.view_dim[1] = rend->height;
+
   void *data;
   vmaMapMemory(rend->allocator, rend->global_allocs[rend->current_frame % 3],
                &data);
@@ -831,36 +834,22 @@ void VK_Draw(vk_rend_t *rend, game_state_t *game) {
                        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0,
                        NULL, 0, NULL, 1, &image_memory_barrier_1);
 
-  VkClearValue clear_color;
-  clear_color.color.float32[0] = sin(-1 * (float)rend->current_frame / 10.f);
-  clear_color.color.float32[1] = cos((float)rend->current_frame / 10.f);
-  clear_color.color.float32[2] = sin((float)rend->current_frame / 10.f);
-  clear_color.color.float32[3] = 1.0;
-
-  VkRenderingAttachmentInfo color_attachment_info = {
-      .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-      .imageView = rend->swapchain_image_views[image_index],
-      .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-      .clearValue = clear_color,
+  VkImageBlit blit_region = {
+      .srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+      .srcSubresource.layerCount = 1,
+      .srcOffsets[1].x = rend->width,
+      .srcOffsets[1].y = rend->height,
+      .srcOffsets[1].z = 1,
+      .dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+      .dstSubresource.layerCount = 1,
+      .dstOffsets[1].x = rend->width,
+      .dstOffsets[1].y = rend->height,
+      .dstOffsets[1].z = 1,
   };
-
-  VkRenderingInfo render_info = {
-      .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-      .renderArea =
-          {
-              .extent = {.width = rend->width, .height = rend->height},
-              .offset = {.x = 0, .y = 0},
-          },
-      .layerCount = 1,
-      .colorAttachmentCount = 1,
-      .pColorAttachments = &color_attachment_info,
-  };
-
-  vkCmdBeginRendering(cmd, &render_info);
-
-  vkCmdEndRendering(cmd);
+  vkCmdBlitImage(cmd, rend->shading->shading_image, VK_IMAGE_LAYOUT_GENERAL,
+                 rend->swapchain_images[image_index],
+                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 1, &blit_region,
+                 VK_FILTER_NEAREST);
 
   // Before presenting, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL. ->
   // VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
@@ -1374,8 +1363,10 @@ unsigned VK_PushModel(vk_rend_t *rend, primitive_t *primitives,
                       size_t texture_count) {
   VK_UploadMeshToGpu(rend, &rend->models[rend->model_count], primitives,
                      primitive_count, textures, texture_count);
+  unsigned id = rend->model_count;
+  printf("id: %d\n", id);
   rend->model_count++;
-  return 0;
+  return id;
 }
 
 void VK_PushMap(vk_rend_t *rend, primitive_t *primitives,

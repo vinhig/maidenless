@@ -7,6 +7,7 @@ typedef struct collision_mesh_t collision_mesh_t;
 #include <stdlib.h>
 #include <string.h>
 
+#include "cglm/affine.h"
 #include "cglm/cglm.h"
 #include "cgltf.h"
 #include "stbi_image.h"
@@ -30,6 +31,15 @@ struct game_t {
 
   scene_t *current_scene;
   collision_mesh_t *current_mesh;
+
+  struct {
+    vec4 position;
+    vec4 rotation;
+    vec4 scale;
+
+    bool dirty;
+  } actors[64];
+  unsigned actor_count;
 };
 
 collision_mesh_t *G_LoadCollisionMap(primitive_t *primitives,
@@ -168,19 +178,19 @@ bool G_LoadGLTF(game_t *game, primitive_t **p, unsigned *p_c, texture_t **t,
       }
 
       if (!found_uv) {
-        printf(
-            "All primitives has to have a `TEXCOORD_0` attributes `%s` (%s).\n",
-            map_path, complete_map_path);
+        printf("All primitives have to have a `TEXCOORD_0` attributes `%s` "
+               "(%s).\n",
+               map_path, complete_map_path);
         return false;
       }
       if (!found_pos) {
         printf(
-            "All primitives has to have a `POSITION` attributes `%s` (%s).\n",
+            "All primitives have to have a `POSITION` attributes `%s` (%s).\n",
             map_path, complete_map_path);
         return false;
       }
       if (!found_normal) {
-        printf("All primitives has to have a `NORMAL` attributes `%s` (%s).\n",
+        printf("All primitives have to have a `NORMAL` attributes `%s` (%s).\n",
                map_path, complete_map_path);
         return false;
       }
@@ -455,6 +465,47 @@ bool G_LoadEnemies(client_t *client, game_t *game, toml_table_t *enemies) {
 
       printf("rot: %f, %f, %f\n", rot[0], rot[1], rot[2]);
     }
+    vec3 scale = {
+        [0] = 1.0,
+        [1] = 1.0,
+        [2] = 1.0,
+    };
+    toml_array_t *enemy_scale = toml_array_in(enemy, "scale");
+    if (enemy_scale) {
+      toml_datum_t x = toml_double_at(enemy_scale, 0);
+      toml_datum_t y = toml_double_at(enemy_scale, 1);
+      toml_datum_t z = toml_double_at(enemy_scale, 2);
+      if (!x.ok || !y.ok || !z.ok) {
+        printf("Enemy `%s` must have a scale field [x, y, z] where each"
+               "component has to be a number.\n",
+               key);
+        return false;
+      }
+
+      scale[0] = (float)x.u.d;
+      scale[1] = (float)y.u.d;
+      scale[2] = (float)z.u.d;
+
+      printf("scale: %f, %f, %f\n", rot[0], rot[1], rot[2]);
+    }
+
+    unsigned model_id = VK_PushModel(CL_GetRend(client), primitives,
+                                     primitive_count, textures, texture_count);
+    game->actors[model_id].position[0] = pos[0];
+    game->actors[model_id].position[1] = pos[1];
+    game->actors[model_id].position[2] = pos[2];
+
+    game->actors[model_id].rotation[0] = rot[0];
+    game->actors[model_id].rotation[1] = rot[1];
+    game->actors[model_id].rotation[2] = rot[2];
+
+    game->actors[model_id].scale[0] = scale[0];
+    game->actors[model_id].scale[1] = scale[1];
+    game->actors[model_id].scale[2] = scale[2];
+
+    game->actors[model_id].dirty = true;
+
+    game->actor_count++;
   }
 
   return true;
@@ -597,6 +648,33 @@ game_state_t G_TickGame(client_t *client, game_t *game) {
   game_state.fps.proj[1][1] *= -1;
   glm_mat4_mul(game_state.fps.proj, game_state.fps.view,
                game_state.fps.view_proj);
+
+  // Iterate through actor and update transforms
+  for (unsigned i = 0; i < game->actor_count; i++) {
+    mat4 model;
+    mat4 inv_model;
+
+    mat4 translation;
+    glm_translate(translation, game->actors[i].position);
+
+    mat4 rot_x;
+    glm_rotate(rot_x, game->actors[i].rotation[0], (vec3){1.0, 0.0, 0.0});
+    mat4 rot_y;
+    glm_rotate(rot_y, game->actors[i].rotation[1], (vec3){0.0, 1.0, 0.0});
+    mat4 rot_z;
+    glm_rotate(rot_z, game->actors[i].rotation[2], (vec3){0.0, 0.0, 1.0});
+
+    mat4 scale;
+    glm_scale(scale, game->actors[i].scale);
+
+    glm_mat4_mul(translation, rot_x, model);
+    glm_mat4_mul(model, rot_y, inv_model);
+    glm_mat4_mul(inv_model, rot_z, model);
+    glm_mat4_mul(model, rot_z, inv_model);
+    glm_mat4_mul(inv_model, scale, game_state.actors[i].model);
+
+    glm_mat4_inv(model, game_state.actors[i].inv_model);
+  }
 
   return game_state;
 }

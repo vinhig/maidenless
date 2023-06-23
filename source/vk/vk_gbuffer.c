@@ -503,6 +503,14 @@ void VK_DrawGBuffer(vk_rend_t *rend, game_state_t *game) {
     vkCmdDrawIndexed(cmd, rend->map.index_counts[i], 1, 0, 0, 0);
   }
 
+//   for (unsigned i = 0; i < rend->model_count; i++) {
+//     vk_model_t *model = &rend->models[i];
+
+//     for (unsigned j = 0; j < model->primitive_count; j++) {
+//       vkCmdBindVertexBuffers(cmd, mode)
+//     }
+//   }
+
   vkCmdEndRendering(cmd);
 }
 

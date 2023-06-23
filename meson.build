@@ -1,7 +1,7 @@
 # , 'b_lundef=false', 'b_sanitize=address,undefined'
 project('maidenless', 'c', 'cpp',
   version : '0.1',
-  default_options : ['warning_level=3', 'c_std=c11', 'cpp_std=c++17', 'b_lundef=false', 'b_sanitize=address,undefined'])
+  default_options : ['warning_level=3', 'c_std=c11', 'cpp_std=c++17'])
 
 cc = meson.get_compiler('c')
 m = cc.find_library('m', required : false)

@@ -7,12 +7,11 @@ layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 #include "global_ubo.glsl"
 
-layout(set = 1, binding = 0) uniform writeonly image2D img_shading;
-layout(set = 1, binding = 1) uniform accelerationStructureEXT acc_struct;
-layout(set = 1, binding = 2) uniform sampler2D tex_position;
-layout(set = 1, binding = 3) uniform sampler2D tex_normal;
-layout(set = 1, binding = 4) uniform sampler2D tex_albedo;
-layout(set = 1, binding = 5) uniform sampler2D tex_depth;
+layout(set = 1, binding = 0, rgba16f) uniform image2D img_shading;
+layout(set = 1, binding = 1) uniform sampler2D tex_position;
+layout(set = 1, binding = 2) uniform sampler2D tex_normal;
+layout(set = 1, binding = 3) uniform sampler2D tex_albedo;
+layout(set = 1, binding = 4) uniform sampler2D tex_depth;
 
 void main() {
   ivec2 coord = ivec2(gl_GlobalInvocationID);

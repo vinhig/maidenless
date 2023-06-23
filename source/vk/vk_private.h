@@ -97,6 +97,7 @@ typedef struct vk_global_ubo_t {
   mat4 proj;
   mat4 view_proj;
   vec4 view_dir;
+  vec2 view_dim;
 } vk_global_ubo_t;
 
 struct vk_rend_t {

@@ -17,6 +17,13 @@ typedef struct game_state_t {
     mat4 view_proj;
     // vec3 pos;
   } fps;
+
+  // Next, transforms for every actor
+  // Actor are moving animated meshes
+  struct {
+    mat4 model;
+    mat4 inv_model;
+  } actors[64];
 } game_state_t;
 
 /// @brief Create a new game, allocating the memory for it. Read `main.toml`

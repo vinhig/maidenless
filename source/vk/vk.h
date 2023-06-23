@@ -10,6 +10,7 @@ typedef struct vertex_t {
   float pos[3];
   float norm[3];
   float uv[3];
+  int joint[4];
 } vertex_t;
 
 typedef struct primitive_t {
@@ -23,7 +24,7 @@ typedef struct primitive_t {
 typedef struct texture_t {
   int width, height, c;
   unsigned char *data;
-  char* label;
+  char *label;
 } texture_t;
 
 typedef struct vk_model_t vk_model_t;
